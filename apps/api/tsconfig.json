@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "declaration": true,
+    "strict": true,
+    "noUncheckedSideEffectImports": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@erp/domain": ["../../packages/domain/src"],
+      "@erp/api-client": ["../../packages/api-client/src"],
+      "@erp/config": ["../../packages/config/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"],
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.tsx?$": "tsx"
+    },
+    "testMatch": ["**/*.test.ts"],
+    "moduleNameMapper": {
+      "^@erp/domain": "<rootDir>/../../packages/domain/src",
+      "^@erp/api-client": "<rootDir>/../../packages/api-client/src",
+      "^@erp/config": "<rootDir>/../../packages/config/src"
+    }
+  }
+}
