@@ -1,0 +1,38 @@
+# Blueprint de Render: https://render.com/docs/blueprint-spec
+# Se aplica desde el panel: New → Blueprint → seleccionar este repositorio.
+services:
+  - type: web
+    name: erp-api
+    runtime: docker
+    dockerfilePath: ./infra/Dockerfile
+    dockerContext: .
+    # La región no se puede cambiar después de crear el servicio; conviene la más cercana al cluster de Atlas.
+    region: virginia
+    plan: free
+    branch: desarrollo
+    autoDeploy: true
+    healthCheckPath: /health
+    # Solo redeploy cuando cambia algo que afecta a la API (no en cambios de mobile/web/docs).
+    buildFilter:
+      paths:
+        - apps/api/**
+        - packages/**
+        - infra/Dockerfile
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - .npmrc
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT lo inyecta Render automáticamente.
+      - key: MONGODB_URI
+        sync: false # se pide en el panel al crear el Blueprint; nunca en el repo
+      - key: MONGODB_DB_NAME
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: DEFAULT_TENANT_ID
+        value: dev-tenant-001
