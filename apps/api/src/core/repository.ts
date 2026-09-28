@@ -15,7 +15,7 @@ export class TenantRepository<T extends TenantScopedDocument> {
 
   async findById(id: string, tenantId?: string): Promise<T | null> {
     const scopedTenantId = this.requireTenant(tenantId);
-    return this.collection.findOne({ _id: id, tenantId: scopedTenantId, deletedAt: null } as Filter<T>);
+    return (await this.collection.findOne({ _id: id, tenantId: scopedTenantId, deletedAt: null } as Filter<T>)) as T | null;
   }
 
   async insert(document: OptionalUnlessRequiredId<T>, tenantId?: string): Promise<void> {

@@ -1,18 +1,20 @@
+import path from 'node:path';
 import dotenv from 'dotenv';
-import { loadConfig, type ServerConfig } from '@erp/config';
+import { loadConfig } from '@erp/config';
 import { logger } from './config/logger';
 import { connectDB } from './config/database';
 import { createApp } from './app';
 
-dotenv.config();
+// El .env.local vive en la raíz del monorepo; __dirname es apps/api/src (dev) o apps/api/dist (build).
+dotenv.config({ path: path.resolve(__dirname, '../../../.env.local') });
 
 const config = loadConfig();
 
 async function main() {
   logger.info('Starting ERP API...', { env: config.nodeEnv, port: config.port });
 
-  await connectDB(config.mongodbUri);
-  logger.info('MongoDB connected');
+  await connectDB(config.mongodbUri, config.mongodbDbName);
+  logger.info('MongoDB connected', { database: config.mongodbDbName ?? '(from URI)' });
 
   const app = createApp(config);
 
