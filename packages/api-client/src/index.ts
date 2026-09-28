@@ -1,5 +1,4 @@
 import fetch from 'cross-fetch';
-import type { ApiResponse } from '@erp/domain';
 
 const DEFAULT_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
 
@@ -24,7 +23,7 @@ export class ApiClient {
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...init.headers,
+      ...(init.headers as Record<string, string> | undefined),
     };
 
     if (this.tenantId) {

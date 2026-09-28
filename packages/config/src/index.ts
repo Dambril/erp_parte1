@@ -9,7 +9,8 @@ export const serverConfigSchema = z.object({
   jwtExpiresIn: z.string().default('15m'),
   jwtRefreshSecret: z.string().min(8, 'JWT_REFRESH_SECRET must be at least 8 characters'),
   jwtRefreshExpiresIn: z.string().default('7d'),
-  redisUrl: z.string().url('REDIS_URL must be a valid URL'),
+  // Opcional mientras no haya jobs de BullMQ; hacerlo obligatorio al introducir colas.
+  redisUrl: z.string().url('REDIS_URL must be a valid URL').optional(),
   defaultTenantId: z.string().min(1, 'DEFAULT_TENANT_ID is required'),
 });
 
@@ -25,7 +26,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     jwtRefreshSecret: env.JWT_REFRESH_SECRET,
     jwtRefreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
-    redisUrl: env.REDIS_URL,
+    redisUrl: env.REDIS_URL || undefined,
     defaultTenantId: env.DEFAULT_TENANT_ID,
   });
 }

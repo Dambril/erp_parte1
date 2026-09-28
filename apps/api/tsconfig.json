@@ -12,7 +12,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": false,
-    "rootDir": "src",
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
