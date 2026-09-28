@@ -19,3 +19,5 @@ Aceptada para la fase 0.
 ## Consecuencias
 
 El esqueleto compila y permite validar infraestructura sin introducir lógica de negocio. MongoDB Atlas es un requisito para un estado saludable real y no se simula en producción.
+
+peneeeeeeeeeeeeeee
