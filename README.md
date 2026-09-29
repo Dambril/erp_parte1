@@ -90,6 +90,50 @@ Remove-Item Env:ADMIN_PASSWORD
 
 Opcionales: `--tenant <id>` (por defecto `DEFAULT_TENANT_ID`) y `--role superadmin`.
 
+### Convenciones de la API
+
+- Las respuestas exitosas tienen la forma `{ success: true, data, timestamp }`. Los listados devuelven en `data` el objeto `{ items, page, pageSize, total }` y aceptan `?page=` (desde 1), `?pageSize=` (máximo 100) y, en catálogos, `?q=` como búsqueda de texto literal.
+- Cantidades, costos, precios y tasas viajan como **texto decimal** (`"12.50"`), nunca como número; se guardan como `Decimal128`.
+- Cada ruta exige un permiso `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`). Con los roles actuales, `viewer` solo lee, `user` lee y crea, `manager` también modifica y `admin` puede todo. Algunas rutas son solo para `admin`.
+
+### Catálogos
+
+Recursos: `units`, `taxes`, `currencies`, `product-categories`, `products`, `customers`, `suppliers` y `warehouses`. Cada documento acepta un objeto `custom` para campos configurables.
+
+| Ruta | Permiso | Descripción |
+| --- | --- | --- |
+| `GET /catalogs/<recurso>` | `catalogs.<entidad>.read` | Listado paginado. En `products` busca por `sku` y `name`; en `customers` y `suppliers`, por `code`, `legalName` y `taxId`. |
+| `GET /catalogs/<recurso>/:id` | `catalogs.<entidad>.read` | Un registro activo. |
+| `POST /catalogs/<recurso>` | `catalogs.<entidad>.create` | Alta. `409` si el código o SKU ya existe en el tenant. |
+| `PATCH /catalogs/<recurso>/:id` | `catalogs.<entidad>.update` | Cambio parcial. En productos no se pueden cambiar `type`, `tracking` ni `unitId`. |
+| `DELETE /catalogs/<recurso>/:id` | `catalogs.<entidad>.delete` | Borrado lógico. `409` si el registro está en uso o tiene existencias. |
+
+Las entidades de permiso son `unit`, `tax`, `currency`, `category`, `product`, `customer`, `supplier` y `warehouse`. Cada alta, cambio o baja queda en la bitácora `audit_logs`.
+
+### Inventario
+
+| Ruta | Permiso | Descripción |
+| --- | --- | --- |
+| `POST /inventory/movements` | `inventory.movement.create` | `{ type: 'entry' \| 'exit' \| 'adjustment', productId, warehouseId, quantity, unitCost?, lotCode?, lotExpiresAt?, serialNumber?, reference? }`. Entrada y salida llevan cantidad positiva; el ajuste lleva signo. |
+| `GET /inventory/movements/:id` | `inventory.movement.read` | Un movimiento. Los movimientos no se modifican ni se borran. |
+| `POST /inventory/movements/:id/reverse` | `inventory.reversal.create` | `{ reason? }`. Crea el movimiento inverso enlazado. Revertir una pata de un traspaso revierte ambas. Un movimiento solo se revierte una vez. |
+| `POST /inventory/transfers` | `inventory.transfer.create` | `{ productId, fromWarehouseId, toWarehouseId, quantity, lotCode?, serialNumber?, reference? }`. Salida y entrada atómicas. |
+| `GET /inventory/stock` | `inventory.stock.read` | Existencias distintas de cero; filtros `productId` y `warehouseId`. |
+| `GET /inventory/kardex/:productId` | `inventory.movement.read` | Movimientos en orden de folio, con saldo acumulado y `openingBalance`; filtros `warehouseId`, `from` y `to` (ISO 8601). |
+| `GET /inventory/lots?productId=` | `inventory.lot.read` | Lotes o series de un producto. |
+| `POST /inventory/lots` | `inventory.lot.create` | `{ productId, code, expiresAt? }`. Registra un lote o serie por adelantado. |
+| `GET /inventory/settings` | `inventory.settings.read` (solo `admin`) | Política del tenant: `{ allowNegativeStock }`. |
+| `PUT /inventory/settings` | `inventory.settings.update` (solo `admin`) | Cambia la política. Por defecto se rechaza el stock negativo. |
+| `GET /inventory/reconciliation` | `inventory.reconciliation.read` (solo `admin`) | Recalcula existencias desde los movimientos y reporta diferencias con `stock_levels`. No corrige nada. |
+
+Errores frecuentes: `INSUFFICIENT_STOCK` (409), `TRACKING_REQUIRED` (400), `SERIAL_ALREADY_IN_STOCK` (409), `MOVEMENT_ALREADY_REVERSED` (409), `INVALID_QUANTITY_PRECISION` (400, más decimales de los que permite la unidad) y `PRODUCT_NOT_STOCKABLE` (400, servicios).
+
+La reconciliación también se puede ejecutar desde la terminal, contra la base de `.env.local`. El script sale con código 2 si encuentra diferencias:
+
+```powershell
+pnpm --filter @erp/api reconcile-inventory -- --tenant <id>
+```
+
 ## Ejecutar la app móvil
 
 La app se compone de tres procesos. Abre una terminal para cada uno en la raíz del repo.
@@ -167,4 +211,4 @@ También puedes usar `pnpm.cmd` o la terminal Command Prompt.
 
 ## Decisiones de arquitectura
 
-Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md).
+Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md).
