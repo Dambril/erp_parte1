@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import type { Collection, Filter, OptionalUnlessRequiredId, Document, UpdateFilter } from 'mongodb';
+import {
+  Decimal128, type Collection, type Filter, type OptionalUnlessRequiredId, type Document, type Sort, type UpdateFilter,
+} from 'mongodb';
+import { decimalToString } from './decimal';
 
 /**
  * Forma persistida de todo documento de negocio (ver ADR 0001):
  * `_id` es un UUID en texto y las fechas son `Date` nativas de Mongo.
- * Hacia la API se expone con `toApiDocument`: `id` y fechas ISO (BaseDocumentSchema de @erp/domain).
+ * Hacia la API se expone con `toApiDocument`: `id`, fechas ISO (BaseDocumentSchema de @erp/domain)
+ * y los `Decimal128` como texto decimal (ADR 0002).
  */
 export interface TenantScopedDocument extends Document {
   _id: string;
@@ -14,7 +18,7 @@ export interface TenantScopedDocument extends Document {
   deletedAt: Date | null;
 }
 
-type ApiValue<V> = V extends Date ? string : V extends Date | null ? string | null : V;
+type ApiValue<V> = V extends Date | Decimal128 ? string : V extends Date | Decimal128 | null ? string | null : V;
 // Se descartan `_id` y la firma de índice heredada de `Document` para conservar solo los campos declarados.
 export type ApiDocument<T extends TenantScopedDocument> = { id: string } & {
   [K in keyof T as K extends '_id' ? never : string extends K ? never : number extends K ? never : K]: ApiValue<T[K]>;
@@ -25,9 +29,26 @@ export function toApiDocument<T extends TenantScopedDocument>(document: T): ApiD
   const { _id, ...rest } = document;
   const output: Record<string, unknown> = { id: _id };
   for (const [key, value] of Object.entries(rest)) {
-    output[key] = value instanceof Date ? value.toISOString() : value;
+    output[key] = value instanceof Date ? value.toISOString() : value instanceof Decimal128 ? decimalToString(value) : value;
   }
   return output as ApiDocument<T>;
+}
+
+export interface PageRequest {
+  page: number;
+  pageSize: number;
+}
+
+export interface Page<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+/** Escapa un texto de usuario para usarlo como búsqueda literal dentro de un `$regex`. */
+export function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** Campos que el repositorio gestiona por sí mismo al insertar. */
@@ -52,6 +73,20 @@ export class TenantRepository<T extends TenantScopedDocument> {
 
   async findMany(tenantId: string | undefined, filter: Filter<T> = {}, limit = 100): Promise<T[]> {
     return (await this.collection.find(this.scoped(tenantId, filter)).limit(limit).toArray()) as T[];
+  }
+
+  /** Página de documentos activos del tenant, con el total para la paginación. */
+  async findPage(tenantId: string | undefined, filter: Filter<T>, { page, pageSize }: PageRequest, sort: Sort = { _id: 1 }): Promise<Page<T>> {
+    const scoped = this.scoped(tenantId, filter);
+    const [items, total] = await Promise.all([
+      this.collection.find(scoped).sort(sort).skip((page - 1) * pageSize).limit(pageSize).toArray(),
+      this.collection.countDocuments(scoped),
+    ]);
+    return { items: items as T[], page, pageSize, total };
+  }
+
+  async count(tenantId: string | undefined, filter: Filter<T> = {}): Promise<number> {
+    return this.collection.countDocuments(this.scoped(tenantId, filter));
   }
 
   async insert(document: NewDocument<T>, tenantId?: string): Promise<T> {
