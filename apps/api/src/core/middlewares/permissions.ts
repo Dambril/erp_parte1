@@ -1,9 +1,9 @@
 import type { RequestHandler } from 'express';
-import type { Role } from '@erp/domain';
+import type { ModuleAction, PermissionAction, PermissionModule, Role } from '@erp/domain';
 import { HttpError } from '../http-error';
 
-export type PermissionAction = 'read' | 'create' | 'update' | 'delete';
-export interface PermissionRequirement { module: string; action: PermissionAction }
+export type { PermissionAction } from '@erp/domain';
+export interface PermissionRequirement { module: PermissionModule; action: PermissionAction }
 
 // RBAC base. Punto único para ajustar permisos cuando cada módulo defina los suyos.
 const ROLE_ACTIONS: Record<Role, readonly PermissionAction[] | 'all'> = {
@@ -15,7 +15,7 @@ const ROLE_ACTIONS: Record<Role, readonly PermissionAction[] | 'all'> = {
 };
 
 // Módulos de administración: solo admin y superadmin, sea cual sea la acción.
-const ADMIN_ONLY_MODULES = new Set(['users']);
+const ADMIN_ONLY_MODULES = new Set<PermissionModule>(['users', 'inventory.settings', 'inventory.reconciliation']);
 
 export function can(role: Role, { module, action }: PermissionRequirement): boolean {
   const allowed = ROLE_ACTIONS[role];
@@ -24,12 +24,15 @@ export function can(role: Role, { module, action }: PermissionRequirement): bool
   return allowed.includes(action);
 }
 
-/** Guard por ruta: `router.post('/', requirePermission('users', 'create'), handler)`. */
-export function requirePermission(module: string, action: PermissionAction): RequestHandler {
+/**
+ * Guard por ruta: `router.post('/', requirePermission('catalogs.product', 'create'), handler)`.
+ * Solo acepta combinaciones del catálogo `PERMISSION_CATALOG` de @erp/domain (p. ej. `catalogs.product.create`).
+ */
+export function requirePermission<M extends PermissionModule>(module: M, action: ModuleAction<M>): RequestHandler {
   return (request, _response, next) => {
     if (!request.user) return next(new HttpError(401, 'UNAUTHENTICATED', 'Authentication required'));
     if (!can(request.user.role, { module, action })) {
-      return next(new HttpError(403, 'FORBIDDEN', `Role "${request.user.role}" cannot ${action} ${module}`));
+      return next(new HttpError(403, 'FORBIDDEN', `Role "${request.user.role}" lacks permission ${module}.${action}`));
     }
     next();
   };
