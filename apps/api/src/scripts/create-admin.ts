@@ -9,6 +9,7 @@
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import dotenv from 'dotenv';
+import { ZodError } from 'zod';
 import { loadConfig } from '@erp/config';
 import { CreateUserRequestSchema } from '@erp/domain';
 import { closeDB, connectDB, getDatabase } from '../config/database';
@@ -19,7 +20,11 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env.local') });
 
 async function run(): Promise<void> {
   const config = loadConfig();
+  // pnpm reenvía el `--` separador literalmente (`pnpm ... create-admin -- --email x`); se descarta.
+  const args = process.argv.slice(2);
+  if (args[0] === '--') args.shift();
   const { values } = parseArgs({
+    args,
     options: {
       email: { type: 'string' },
       name: { type: 'string' },
@@ -45,7 +50,21 @@ async function run(): Promise<void> {
   }
 }
 
+const FIELD_HINTS: Record<string, string> = {
+  email: '--email',
+  name: '--name',
+  role: '--role',
+  password: 'la variable de entorno ADMIN_PASSWORD (mínimo 8 caracteres)',
+};
+
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  if (error instanceof ZodError) {
+    for (const issue of error.issues) {
+      const field = String(issue.path[0]);
+      console.error(`Revisa ${FIELD_HINTS[field] ?? field}: ${issue.message}`);
+    }
+  } else {
+    console.error(error instanceof Error ? error.message : error);
+  }
   process.exit(1);
 });
