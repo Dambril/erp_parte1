@@ -15,6 +15,8 @@ Esta URI será el valor de `MONGODB_URI`.
 
 Render construye la imagen con `infra/Dockerfile`, que se ejecuta desde la raíz del repo.
 
+La forma recomendada es el Blueprint [`render.yaml`](../render.yaml): en Render, *New → Blueprint*, elige el repositorio y rellena `MONGODB_URI` y `MONGODB_DB_NAME` cuando lo pida (los secretos JWT se generan solos). Los pasos siguientes son la alternativa manual.
+
 1. Crea un Web Service y conecta el repositorio de GitHub.
 2. Elige la rama a desplegar y el runtime **Docker**.
 3. Indica `infra/Dockerfile` como Dockerfile y deja el contexto en la raíz.
@@ -24,16 +26,19 @@ Render construye la imagen con `infra/Dockerfile`, que se ejecuta desde la raíz
    | --- | --- |
    | `NODE_ENV` | `production` |
    | `MONGODB_URI` | La URI de Atlas. |
-   | `MONGODB_DB_NAME` | `erp` |
+   | `MONGODB_DB_NAME` | Nombre de la base (el mismo que uses en `.env.local`). |
    | `JWT_SECRET` | Secreto largo y aleatorio. |
    | `JWT_REFRESH_SECRET` | Otro secreto largo, distinto del anterior. |
    | `DEFAULT_TENANT_ID` | El tenant por defecto. |
+   | `CORS_ORIGINS` | Opcional. URLs de la web que consumirá la API, separadas por comas. |
 
    Render define `PORT` por su cuenta y la API lo respeta. No subas estos valores al repositorio.
 5. En Health Check Path, pon `/health`.
 6. Despliega y comprueba `https://<tu-servicio>.onrender.com/health`. Debe responder `status: ok` y `database: connected`.
 
 En el plan gratuito el servicio se duerme tras un tiempo sin tráfico y la primera petición tarda en responder.
+
+Para poder iniciar sesión hace falta un primer administrador: créalo con `create-admin` (ver [README](../README.md#autenticación)) desde tu equipo con `.env.local` apuntando a la misma base que Render.
 
 ## 3. App Android
 
@@ -64,6 +69,7 @@ La app tiene la URL de la API fija en `apps/mobile/App.tsx`. Para producción:
 - [ ] Cluster de Atlas creado, usuario y acceso de red configurados.
 - [ ] Variables de entorno cargadas en Render, con secretos JWT nuevos.
 - [ ] `/health` en Render responde `ok` y `connected`.
+- [ ] Primer administrador creado con `create-admin` y login probado.
 - [ ] `baseUrl` de la app apunta a la API de Render.
 - [ ] Keystore de release propio y fuera del repositorio.
 - [ ] APK o AAB probado en un dispositivo.

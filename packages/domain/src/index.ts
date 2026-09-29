@@ -77,3 +77,34 @@ export type ApiResponse<T = unknown> = {
   data: T;
   timestamp: string;
 };
+
+// ── Auth (identity) ────────────────────────────────────────────────
+
+export const PasswordSchema = z.string().min(8, 'Password must be at least 8 characters').max(128);
+
+export const LoginRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  password: z.string().min(1).max(128),
+});
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+
+export const RefreshRequestSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+export type RefreshRequest = z.infer<typeof RefreshRequestSchema>;
+
+export const CreateUserRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  name: z.string().trim().min(1).max(200),
+  role: RoleSchema.default('user'),
+  password: PasswordSchema,
+});
+export type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>;
+
+export type PublicUser = Omit<User, 'custom'>;
+
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  user: PublicUser;
+}

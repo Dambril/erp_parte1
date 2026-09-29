@@ -48,6 +48,7 @@ Variables (validadas al arrancar en `packages/config`):
 | `DEFAULT_TENANT_ID` | Sí | Tenant por defecto en desarrollo. |
 | `PORT` | No | Por defecto `3000`. |
 | `REDIS_URL` | No | Solo hará falta cuando existan jobs con BullMQ. |
+| `CORS_ORIGINS` | No | Orígenes web permitidos, separados por comas. Si falta: cualquiera en desarrollo, ninguno en producción. Las apps nativas no lo necesitan. |
 | `NODE_ENV` | No | `development`, `test` o `production`. |
 
 ## Verificar el proyecto
@@ -65,6 +66,29 @@ pnpm dev
 ```
 
 `GET http://localhost:3000/health` responde el estado de la API y de MongoDB. Devuelve `503` si la conexión con la base no está activa.
+
+### Autenticación
+
+Todas las rutas salvo `/health` y `/auth/*` exigen `Authorization: Bearer <accessToken>`. El tenant se toma del token.
+
+| Ruta | Descripción |
+| --- | --- |
+| `POST /auth/login` | `{ email, password }` → `accessToken`, `refreshToken` y el usuario. Máximo 10 intentos por IP cada 15 minutos. |
+| `POST /auth/refresh` | `{ refreshToken }` → par de tokens nuevo. El anterior queda invalidado; reutilizarlo cierra todas las sesiones. |
+| `POST /auth/logout` | `{ refreshToken }` → revoca la sesión. |
+| `GET /auth/me` | Usuario autenticado. |
+| `GET /users` | Usuarios del tenant (solo `admin`). |
+| `POST /users` | Crea un usuario en el tenant: `{ email, name, password, role? }` (solo `admin`). |
+
+El primer administrador se crea desde la terminal. La contraseña va en una variable de entorno para que no quede en el historial, y el usuario se crea en la base a la que apunte `.env.local`:
+
+```powershell
+$env:ADMIN_PASSWORD = 'una-contraseña-larga'
+pnpm --filter @erp/api create-admin -- --email admin@empresa.com --name "Administrador"
+Remove-Item Env:ADMIN_PASSWORD
+```
+
+Opcionales: `--tenant <id>` (por defecto `DEFAULT_TENANT_ID`) y `--role superadmin`.
 
 ## Ejecutar la app móvil
 
