@@ -1,20 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 
-export interface TenantContext {
-  tenantId: string;
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      tenant?: TenantContext;
-      user?: { id: string; roles: string[] };
-    }
-  }
-}
-
+/**
+ * El tenant sale SIEMPRE del access token verificado, nunca de una cabecera del cliente:
+ * así un usuario no puede leer datos de otra empresa cambiando un header.
+ */
 export function tenantMiddleware(request: Request, _response: Response, next: NextFunction): void {
-  const tenantId = request.header('X-Tenant-Id');
-  if (tenantId) request.tenant = { tenantId };
+  if (request.user) request.tenant = { tenantId: request.user.tenantId };
   next();
 }

@@ -2,7 +2,8 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import { loadConfig } from '@erp/config';
 import { logger } from './config/logger';
-import { connectDB } from './config/database';
+import { closeDB, connectDB, getDatabase } from './config/database';
+import { ensureIdentityIndexes } from './modules/identity/identity.repository';
 import { createApp } from './app';
 
 // El .env.local vive en la raíz del monorepo; __dirname es apps/api/src (dev) o apps/api/dist (build).
@@ -15,12 +16,33 @@ async function main() {
 
   await connectDB(config.mongodbUri, config.mongodbDbName);
   logger.info('MongoDB connected', { database: config.mongodbDbName ?? '(from URI)' });
+  await ensureIdentityIndexes(getDatabase());
 
   const app = createApp(config);
 
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     logger.info(`ERP API running on port ${config.port}`, { env: config.nodeEnv });
   });
+
+  // Render envía SIGTERM en cada redeploy: se dejan de aceptar conexiones, se terminan las
+  // peticiones en curso y se cierra Mongo. Si algo se cuelga, se fuerza la salida.
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info('Shutting down', { signal });
+    setTimeout(() => {
+      logger.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10_000).unref();
+    server.close(async () => {
+      await closeDB();
+      logger.info('Shutdown complete');
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 main().catch((err) => {

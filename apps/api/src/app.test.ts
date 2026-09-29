@@ -13,6 +13,7 @@ const config = {
   jwtRefreshExpiresIn: '7d',
   redisUrl: 'redis://localhost:6379',
   defaultTenantId: 'test-tenant',
+  corsOrigins: [],
 } satisfies ServerConfig;
 
 describe('GET /health', () => {
