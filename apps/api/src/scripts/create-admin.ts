@@ -13,7 +13,8 @@ import { ZodError } from 'zod';
 import { loadConfig } from '@erp/config';
 import { CreateUserRequestSchema } from '@erp/domain';
 import { closeDB, connectDB, getDatabase } from '../config/database';
-import { ensureIdentityIndexes, identityRepositories } from '../modules/identity/identity.repository';
+import { ensureIndexes } from '../indexes';
+import { identityRepositories } from '../modules/identity/identity.repository';
 import { IdentityService } from '../modules/identity/identity.service';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env.local') });
@@ -41,7 +42,7 @@ async function run(): Promise<void> {
   await connectDB(config.mongodbUri, config.mongodbDbName);
   try {
     const db = getDatabase();
-    await ensureIdentityIndexes(db);
+    await ensureIndexes(db);
     const { users, refreshTokens } = identityRepositories(db);
     const user = await new IdentityService(users, refreshTokens, config).createUser(input, values.tenant);
     console.log(`Usuario creado: ${user.email} (${user.role}) en el tenant ${user.tenantId}`);

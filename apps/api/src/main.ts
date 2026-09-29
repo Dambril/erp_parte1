@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import { loadConfig } from '@erp/config';
 import { logger } from './config/logger';
 import { closeDB, connectDB, getDatabase } from './config/database';
-import { ensureIdentityIndexes } from './modules/identity/identity.repository';
+import { ensureIndexes } from './indexes';
 import { createApp } from './app';
 
 // El .env.local vive en la raíz del monorepo; __dirname es apps/api/src (dev) o apps/api/dist (build).
@@ -16,7 +16,7 @@ async function main() {
 
   await connectDB(config.mongodbUri, config.mongodbDbName);
   logger.info('MongoDB connected', { database: config.mongodbDbName ?? '(from URI)' });
-  await ensureIdentityIndexes(getDatabase());
+  await ensureIndexes(getDatabase());
 
   const app = createApp(config);
 

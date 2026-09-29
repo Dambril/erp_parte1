@@ -10,6 +10,7 @@ import { authMiddleware } from './core/middlewares/auth';
 import { auditMiddleware } from './core/middlewares/audit';
 import { requestLogger } from './core/middlewares/request-logger';
 import { identityRoutes } from './modules/identity/identity.routes';
+import { catalogsRoutes } from './modules/catalogs/catalogs.routes';
 
 function corsOrigin(config: ServerConfig): cors.CorsOptions['origin'] {
   if (config.corsOrigins.length > 0) return config.corsOrigins;
@@ -50,6 +51,7 @@ export function createApp(config: ServerConfig): express.Express {
   const identity = identityRoutes(config);
   app.use('/auth', identity.auth);
   app.use('/users', identity.users);
+  app.use('/catalogs', catalogsRoutes());
 
   app.use(notFoundHandler);
   app.use(errorHandler);
