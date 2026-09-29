@@ -36,7 +36,21 @@ La forma recomendada es el Blueprint [`render.yaml`](../render.yaml): en Render,
 5. En Health Check Path, pon `/health`.
 6. Despliega y comprueba `https://<tu-servicio>.onrender.com/health`. Debe responder `status: ok` y `database: connected`.
 
-En el plan gratuito el servicio se duerme tras un tiempo sin tráfico y la primera petición tarda en responder.
+En el plan gratuito el servicio se duerme tras 15 minutos sin tráfico y la primera petición tarda en responder. Para evitarlo, despliega el Worker de la sección siguiente.
+
+### Mantener la API despierta (Cloudflare Worker)
+
+[`infra/cloudflare/keepalive`](../infra/cloudflare/keepalive) es un Worker con Cron Trigger que llama a `/health` cada 10 minutos. Solo necesita una cuenta gratuita de Cloudflare (sin dominio).
+
+```powershell
+cd infra/cloudflare/keepalive
+npx wrangler login    # abre el navegador para autorizar tu cuenta
+npx wrangler deploy
+```
+
+Los logs de cada ejecución se ven en Cloudflare → Workers & Pages → `erp-api-keepalive` → Logs, o con `npx wrangler tail`. Si cambia la URL de la API, actualiza `API_HEALTH_URL` en `wrangler.toml` y vuelve a desplegar.
+
+Render da 750 horas gratuitas al mes por cuenta: alcanzan para un servicio encendido todo el mes, pero no para dos.
 
 Para poder iniciar sesión hace falta un primer administrador: créalo con `create-admin` (ver [README](../README.md#autenticación)) desde tu equipo con `.env.local` apuntando a la misma base que Render.
 
