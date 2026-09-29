@@ -1,68 +1,26 @@
 import React from 'react';
-import {
-  Image,
-  Platform,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
-import {ApiClient} from '@erp/api-client';
-import {HealthApp} from '@erp/ui';
-
-// El emulador de Android ve el localhost del PC en 10.0.2.2
-const baseUrl =
-  Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
-const client = new ApiClient({baseUrl});
-
-// El PNG es de 2000x2000 con mucho margen alrededor; se amplía y se recorta al centro.
-const LOGO_BACKGROUND = '#C1FF72';
-const LOGO_ZOOM = 1.7;
+import {StatusBar} from 'react-native';
+import {NavigationContainer} from '@react-navigation/native';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {colors} from './src/theme/colors';
+import {AuthProvider} from './src/state/AuthContext';
+import {ObrasProvider} from './src/state/ObrasContext';
+import {RootNavigator} from './src/navigation/RootNavigator';
 
 export default function App(): React.JSX.Element {
-  const {width} = useWindowDimensions();
-
   return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar backgroundColor={LOGO_BACKGROUND} barStyle="dark-content" />
-      <View style={[styles.logoFrame, {height: width * 0.9}]}>
-        <Image
-          source={require('./src/assets/logo1.png')}
-          style={{width: width * LOGO_ZOOM, height: width * LOGO_ZOOM}}
-          resizeMode="contain"
-          accessibilityLabel="T-SSERA Construcciones"
-        />
-      </View>
-      <View style={styles.status}>
-        <Text style={styles.statusLabel}>Estado de la API</Text>
-        <HealthApp client={client} />
-      </View>
-    </SafeAreaView>
+    <GestureHandlerRootView style={{flex: 1}}>
+      <SafeAreaProvider>
+        <StatusBar backgroundColor={colors.hueso} barStyle="dark-content" />
+        <AuthProvider>
+          <ObrasProvider>
+            <NavigationContainer>
+              <RootNavigator />
+            </NavigationContainer>
+          </ObrasProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: LOGO_BACKGROUND,
-  },
-  logoFrame: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  status: {
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  statusLabel: {
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: '#000',
-    opacity: 0.6,
-    marginBottom: 4,
-  },
-});
