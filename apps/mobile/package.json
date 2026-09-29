@@ -7,7 +7,7 @@
     "start": "react-native start",
     "android": "react-native run-android",
     "build": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src App.tsx --ext .ts,.tsx",
     "test": "echo No tests for mobile app",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
