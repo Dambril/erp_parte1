@@ -6,6 +6,9 @@ compatibility_date = "2026-09-01"
 # Solo se ejecuta por cron; no necesita URL pública.
 workers_dev = false
 
+[observability]
+enabled = true
+
 [triggers]
 crons = ["*/10 * * * *"]
 
