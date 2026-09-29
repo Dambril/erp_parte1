@@ -32,6 +32,19 @@ export function createApp(config: ServerConfig): express.Express {
   app.use(tenantMiddleware);
   app.use(auditMiddleware);
 
+  app.get('/', (_request, response) => {
+    response.json({
+      success: true,
+      data: {
+        name: 'ERP API',
+        // Render define RENDER_GIT_COMMIT: permite ver qué commit está desplegado.
+        commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? 'local',
+        endpoints: ['GET /health', 'POST /auth/login', 'POST /auth/refresh', 'POST /auth/logout', 'GET /auth/me', 'GET /users', 'POST /users'],
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.get('/health', async (_request, response) => {
     let connected = false;
     try {

@@ -16,6 +16,15 @@ const config = {
   corsOrigins: [],
 } satisfies ServerConfig;
 
+describe('GET /', () => {
+  it('describes the API instead of returning NOT_FOUND', async () => {
+    const response = await request(createApp(config)).get('/');
+    expect(response.status).toBe(200);
+    expect(response.body.data.name).toBe('ERP API');
+    expect(response.body.data.endpoints).toContain('POST /auth/login');
+  });
+});
+
 describe('GET /health', () => {
   it('reports a disconnected database instead of a false healthy state', async () => {
     const response = await request(createApp(config)).get('/health');
