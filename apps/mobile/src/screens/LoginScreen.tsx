@@ -2,10 +2,13 @@ import React, {useState} from 'react';
 import {Image, KeyboardAvoidingView, Platform, StyleSheet, Text, View} from 'react-native';
 import {colors} from '../theme/colors';
 import {typography} from '../theme/typography';
-import {isValidEmail} from '../data/auth';
 import {useAuth} from '../state/AuthContext';
 import {PrimaryButton} from '../components/PrimaryButton';
 import {TextField} from '../components/TextField';
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
 
 export function LoginScreen(): React.ReactElement {
   const {login, isLoggingIn} = useAuth();
@@ -17,8 +20,7 @@ export function LoginScreen(): React.ReactElement {
 
   const handleSubmit = async () => {
     const nextEmailError = isValidEmail(email) ? null : 'Ingresa un correo válido.';
-    const nextPasswordError =
-      password.length >= 6 ? null : 'La contraseña debe tener al menos 6 caracteres.';
+    const nextPasswordError = password ? null : 'Ingresa tu contraseña.';
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
     setFormError(null);
@@ -78,7 +80,7 @@ export function LoginScreen(): React.ReactElement {
         />
 
         <Text style={[typography.bodySmall, styles.hint]}>
-          Demo: roberto@tssera.com / demo1234
+          ¿Sin acceso? Pide a un administrador que te cree una cuenta.
         </Text>
       </View>
     </KeyboardAvoidingView>

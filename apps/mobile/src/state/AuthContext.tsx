@@ -1,14 +1,12 @@
 import React, {createContext, useContext, useEffect, useMemo, useState} from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {loginConCredenciales, type DemoUser} from '../data/auth';
-
-const SESSION_KEY = '@tssera/session';
+import {mensajeError} from '@erp/api-client';
+import type {PublicUser} from '@erp/domain';
+import {apiClient} from '../lib/apiClient';
 
 interface AuthContextValue {
-  user: DemoUser | null;
+  user: PublicUser | null;
   isLoadingSession: boolean; // true mientras se revisa si ya había sesión guardada
-  isLoggingIn: boolean; // true mientras se procesa el login
-  error: string | null;
+  isLoggingIn: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -16,45 +14,38 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({children}: {children: React.ReactNode}): React.ReactElement {
-  const [user, setUser] = useState<DemoUser | null>(null);
+  const [user, setUser] = useState<PublicUser | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(SESSION_KEY)
-      .then((raw) => {
-        if (raw) setUser(JSON.parse(raw));
-      })
-      .catch(() => {
-        // Sesión no recuperable: se sigue como si no hubiera sesión.
-      })
+    // Si el refresh token caduca o se revoca, el cliente avisa con null y se vuelve al login.
+    const unsubscribe = apiClient.onSessionChange((session) => setUser(session?.user ?? null));
+    apiClient
+      .restoreSession()
+      .then((session) => setUser(session?.user ?? null))
       .finally(() => setIsLoadingSession(false));
+    return unsubscribe;
   }, []);
 
-  const login = async (email: string, password: string) => {
-    setIsLoggingIn(true);
-    setError(null);
-    try {
-      const demoUser = await loginConCredenciales(email, password);
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(demoUser));
-      setUser(demoUser);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión.');
-      throw err;
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const logout = async () => {
-    await AsyncStorage.removeItem(SESSION_KEY);
-    setUser(null);
-  };
-
   const value = useMemo<AuthContextValue>(
-    () => ({user, isLoadingSession, isLoggingIn, error, login, logout}),
-    [user, isLoadingSession, isLoggingIn, error],
+    () => ({
+      user,
+      isLoadingSession,
+      isLoggingIn,
+      login: async (email, password) => {
+        setIsLoggingIn(true);
+        try {
+          await apiClient.login(email.trim(), password);
+        } catch (err) {
+          throw new Error(mensajeError(err));
+        } finally {
+          setIsLoggingIn(false);
+        }
+      },
+      logout: () => apiClient.logout(),
+    }),
+    [user, isLoadingSession, isLoggingIn],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

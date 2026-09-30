@@ -1,3 +1,5 @@
+import type {ObraEstado} from '@erp/domain';
+
 // Paleta del diseño de Figma "T-Ssera Construcciones" (ver docs/brief pegado en la conversación).
 export const colors = {
   lima: '#B6FF5C', // primario / CTA
@@ -13,20 +15,15 @@ export const colors = {
   blanco: '#FFFFFF', // cards
 } as const;
 
-export type ObraEstado = 'en_progreso' | 'certificando' | 'retrasada' | 'completada';
+export {OBRA_ESTADO_LABEL as estadoLabel} from '@erp/domain';
+export type {ObraEstado};
 
-// El brief no especifica un color propio para "certificando"; se usa el verde bosque
-// claro para diferenciarlo de "en progreso" (ámbar) sin salir de la paleta dada.
+// El brief no especifica color para "certificando" ni "propuesta": se usan tonos de la paleta
+// que los diferencian de "en progreso" (ámbar).
 export const estadoColor: Record<ObraEstado, string> = {
+  propuesta: colors.piedra,
   en_progreso: colors.ambar,
   certificando: colors.verdeBosqueClaro,
   retrasada: colors.terracota,
   completada: colors.exito,
-};
-
-export const estadoLabel: Record<ObraEstado, string> = {
-  en_progreso: 'En progreso',
-  certificando: 'Certificando',
-  retrasada: 'Retrasada',
-  completada: 'Completada',
 };
