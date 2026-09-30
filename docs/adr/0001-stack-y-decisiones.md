@@ -7,7 +7,8 @@ Aceptada para la fase 0.
 ## Decisiones
 
 - El repositorio usa workspaces de pnpm y TypeScript estricto compartido desde la configuración raíz y `packages/config`.
-- El cliente comparte código entre React Native y React Native Web; las aplicaciones consumen `packages/api-client`.
+- La app (React Native) y la web (React DOM + Vite) comparten lógica, no interfaz: esquemas y reglas en `packages/domain`, y sesión, llamadas, canal en tiempo real y `ObrasStore` en `packages/api-client`. Se descartó React Native Web para la web porque el panel de escritorio tiene otra disposición (tablas, formularios largos) y compilar librerías de RN 0.73 en Vite era frágil.
+- Tiempo real con WebSocket nativo (`ws` en la API, `WebSocket` del navegador y de React Native): el canal `/ws` se autentica con el access token en el primer mensaje y difunde por tenant cada cambio de una obra. Los sockets viven en memoria (una instancia); con varias haría falta Redis pub/sub.
 - La API usa Node.js y Express, con el flujo route -> controller -> service -> repository reservado para los módulos.
 - MongoDB Atlas es la base de datos; la configuración se obtiene exclusivamente de variables de entorno.
 - Cada acceso futuro a datos debe estar acotado por `tenantId`; el repositorio base rechaza consultas sin tenant.
@@ -17,8 +18,10 @@ Aceptada para la fase 0.
 - Jest y Supertest cubren la API; BullMQ/Redis quedan preparados para fases posteriores.
 - El dinero se representa como `Decimal128` en persistencia y como cadena decimal en los tipos compartidos, nunca como `number`.
 - Autenticación con JWT: access token corto (`JWT_EXPIRES_IN`) y refresh token rotatorio (`JWT_REFRESH_EXPIRES_IN`) cuyo `jti` se guarda en `refresh_tokens`; reutilizar un refresh token ya rotado revoca todas las sesiones del usuario. Contraseñas con `scrypt` de Node (sin dependencias nativas).
-- RBAC por rol en `core/middlewares/permissions.ts` (`requirePermission(módulo, acción)`). El middleware de auditoría sigue siendo un contrato sin implementación.
+- RBAC por rol: la tabla de permisos vive en `packages/domain` (`roleCan`) para que los clientes oculten lo que el rol no puede hacer, y la API la aplica con `requirePermission(módulo, acción)`. La acción `approve` (aprobar o solicitar cambios) corresponde a gerentes y administradores.
+- Auditoría: cada acción sobre una obra se registra en `audit_log` (actor, acción, entidad, detalles, fecha) desde el servicio, que es quien conoce la entidad afectada.
+- Obras: la etapa (`propuesta`, `ejecucion`, `certificacion`, `completada`) se persiste y solo la cambian las decisiones; el estado visible (incluido `retrasada`) se deriva del cronograma al leer. El impacto ambiental real es la suma de mediciones registradas, separado del estimado.
 
 ## Consecuencias
 
-El esqueleto compila y permite validar infraestructura sin introducir lógica de negocio. MongoDB Atlas es un requisito para un estado saludable real y no se simula en producción.
+MongoDB Atlas es un requisito para un estado saludable real y no se simula en producción (los tests usan `mongodb-memory-server`).

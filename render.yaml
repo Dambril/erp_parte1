@@ -36,3 +36,6 @@ services:
         generateValue: true
       - key: DEFAULT_TENANT_ID
         value: dev-tenant-001
+      # URL(s) de la web en Cloudflare Pages, separadas por comas. Sin ella el navegador no puede usar la API.
+      - key: CORS_ORIGINS
+        sync: false
