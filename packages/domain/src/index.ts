@@ -35,6 +35,32 @@ export type BaseDocument = z.infer<typeof BaseDocumentSchema>;
 export const RoleSchema = z.enum(['superadmin', 'admin', 'manager', 'user', 'viewer']);
 export type Role = z.infer<typeof RoleSchema>;
 
+export const ROLE_LABEL: Record<Role, string> = {
+  superadmin: 'Superadministrador',
+  admin: 'Administrador',
+  manager: 'Gerente de proyecto',
+  user: 'Residente de obra',
+  viewer: 'Consulta',
+};
+
+// ── Permisos (RBAC) ────────────────────────────────────────────────
+// Compartidos para que la API los aplique y los clientes oculten lo que el rol no puede hacer.
+
+export type PermissionAction = 'read' | 'create' | 'update' | 'delete' | 'approve';
+
+export const ROLE_ACTIONS: Record<Role, readonly PermissionAction[] | 'all'> = {
+  superadmin: 'all',
+  admin: 'all',
+  manager: ['read', 'create', 'update', 'approve'],
+  user: ['read', 'create'],
+  viewer: ['read'],
+};
+
+export function roleCan(role: Role, action: PermissionAction): boolean {
+  const allowed = ROLE_ACTIONS[role];
+  return allowed === 'all' || allowed.includes(action);
+}
+
 export const UserSchema = BaseDocumentSchema.extend({
   email: z.string().email(),
   name: z.string().min(1),
@@ -108,3 +134,5 @@ export interface AuthSession {
   refreshToken: string;
   user: PublicUser;
 }
+
+export * from './obras';

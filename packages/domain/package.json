@@ -10,6 +10,9 @@
     "test": "echo No tests for domain package",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/jest": "^29.5.0",
