@@ -1,8 +1,8 @@
 import React from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import type {Obra} from '@erp/domain';
 import {colors} from '../theme/colors';
 import {typography} from '../theme/typography';
-import type {Obra} from '../types/obra';
 import {ProgressBar} from './ProgressBar';
 import {StatusBadge} from './StatusBadge';
 
@@ -20,11 +20,13 @@ export function ObraCard({obra, onPress}: {obra: Obra; onPress: () => void}): Re
         </View>
         <StatusBadge estado={obra.estado} />
       </View>
-      <ProgressBar progreso={obra.progreso} />
+      <ProgressBar progreso={obra.avance} />
       <View style={styles.footer}>
-        <Text style={[typography.bodySmall, styles.avance]}>{obra.progreso}% avance</Text>
+        <Text style={[typography.bodySmall, styles.avance]}>{obra.avance}% avance</Text>
         {obra.certificacion ? (
-          <Text style={[typography.bodySmall, styles.certificacion]}>{obra.certificacion}</Text>
+          <Text style={[typography.bodySmall, styles.certificacion]}>
+            {obra.certificacion.tipo} {obra.certificacion.nivelObjetivo}
+          </Text>
         ) : null}
       </View>
     </TouchableOpacity>

@@ -48,7 +48,7 @@ beforeAll(async () => {
 // App nueva por test: el rate limit de login cuenta por instancia y aquí se hacen muchos logins.
 beforeEach(() => {
   sent.length = 0;
-  app = createApp(config, mailer);
+  app = createApp(config, undefined, mailer);
 });
 
 afterAll(async () => {

@@ -1,73 +1,22 @@
-import React, {createContext, useContext, useEffect, useMemo, useState} from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {obrasIniciales} from '../data/obras';
-import type {Obra} from '../types/obra';
-import type {ObraEstado} from '../theme/colors';
+import React, {useEffect, useSyncExternalStore} from 'react';
+import type {ObrasState} from '@erp/api-client';
+import {obrasStore} from '../lib/apiClient';
+import {useAuth} from './AuthContext';
 
-const OBRAS_KEY = '@tssera/obras';
-
-interface ObrasContextValue {
-  obras: Obra[];
-  getObra: (id: string) => Obra | undefined;
-  aprobarObra: (id: string) => void;
-  solicitarCambios: (id: string) => void;
-}
-
-const ObrasContext = createContext<ObrasContextValue | undefined>(undefined);
-
-// "Aprobar" certifica la obra (pasa a completada); "Solicitar cambios" la
-// regresa a en progreso para que el equipo la retome. Son las dos
-// transiciones de estado que pide el brief para el detalle de propuesta.
-const SIGUIENTE_ESTADO: Partial<Record<ObraEstado, ObraEstado>> = {
-  certificando: 'completada',
-};
-
+/** Carga las obras y abre el canal de tiempo real mientras haya sesión. */
 export function ObrasProvider({children}: {children: React.ReactNode}): React.ReactElement {
-  const [obras, setObras] = useState<Obra[]>(obrasIniciales);
+  const {user} = useAuth();
 
   useEffect(() => {
-    AsyncStorage.getItem(OBRAS_KEY)
-      .then((raw) => {
-        if (raw) setObras(JSON.parse(raw));
-      })
-      .catch(() => {
-        // Si no se puede leer, se sigue con los datos de ejemplo.
-      });
-  }, []);
+    if (!user) return;
+    obrasStore.start();
+    return () => obrasStore.stop();
+  }, [user]);
 
-  useEffect(() => {
-    AsyncStorage.setItem(OBRAS_KEY, JSON.stringify(obras)).catch(() => {
-      // Persistencia best-effort: si falla, el cambio sigue vivo en memoria.
-    });
-  }, [obras]);
-
-  const actualizarEstado = (id: string, estado: ObraEstado, progreso?: number) => {
-    setObras((prev) =>
-      prev.map((obra) =>
-        obra.id === id ? {...obra, estado, progreso: progreso ?? obra.progreso} : obra,
-      ),
-    );
-  };
-
-  const value = useMemo<ObrasContextValue>(
-    () => ({
-      obras,
-      getObra: (id) => obras.find((obra) => obra.id === id),
-      aprobarObra: (id) => {
-        const obra = obras.find((o) => o.id === id);
-        const siguiente = obra ? SIGUIENTE_ESTADO[obra.estado] ?? 'certificando' : 'certificando';
-        actualizarEstado(id, siguiente, siguiente === 'completada' ? 100 : undefined);
-      },
-      solicitarCambios: (id) => actualizarEstado(id, 'en_progreso'),
-    }),
-    [obras],
-  );
-
-  return <ObrasContext.Provider value={value}>{children}</ObrasContext.Provider>;
+  return <>{children}</>;
 }
 
-export function useObras(): ObrasContextValue {
-  const ctx = useContext(ObrasContext);
-  if (!ctx) throw new Error('useObras debe usarse dentro de <ObrasProvider>');
-  return ctx;
+export function useObras(): ObrasState & {store: typeof obrasStore} {
+  const state = useSyncExternalStore(obrasStore.subscribe, obrasStore.getSnapshot);
+  return {...state, store: obrasStore};
 }

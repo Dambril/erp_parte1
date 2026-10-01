@@ -4,6 +4,7 @@ import { loadConfig } from '@erp/config';
 import { logger } from './config/logger';
 import { closeDB, connectDB, getDatabase } from './config/database';
 import { ensureIndexes } from './indexes';
+import { RealtimeHub } from './core/realtime';
 import { createApp } from './app';
 
 // El .env.local vive en la raíz del monorepo; __dirname es apps/api/src (dev) o apps/api/dist (build).
@@ -18,11 +19,13 @@ async function main() {
   logger.info('MongoDB connected', { database: config.mongodbDbName ?? '(from URI)' });
   await ensureIndexes(getDatabase());
 
-  const app = createApp(config);
+  const realtime = new RealtimeHub(config);
+  const app = createApp(config, realtime.publish);
 
   const server = app.listen(config.port, () => {
     logger.info(`ERP API running on port ${config.port}`, { env: config.nodeEnv });
   });
+  realtime.attach(server);
 
   // Render envía SIGTERM en cada redeploy: se dejan de aceptar conexiones, se terminan las
   // peticiones en curso y se cierra Mongo. Si algo se cuelga, se fuerza la salida.
@@ -35,6 +38,8 @@ async function main() {
       logger.error('Forced shutdown after timeout');
       process.exit(1);
     }, 10_000).unref();
+    // Los WebSocket abiertos impedirían que server.close termine.
+    realtime.close();
     server.close(async () => {
       await closeDB();
       logger.info('Shutdown complete');

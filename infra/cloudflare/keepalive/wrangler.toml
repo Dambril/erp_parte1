@@ -1,0 +1,16 @@
+# Worker que mantiene despierta la API de Render (plan free: se duerme tras 15 min sin tráfico).
+# Despliegue: npx wrangler login && npx wrangler deploy (desde esta carpeta).
+name = "erp-api-keepalive"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+# Solo se ejecuta por cron; no necesita URL pública.
+workers_dev = false
+
+[observability]
+enabled = true
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+API_HEALTH_URL = "https://erp-api-305o.onrender.com/health"

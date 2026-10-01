@@ -1,6 +1,6 @@
-# ERP multi-empresa
+# T-Ssera Construcciones · ERP de obras
 
-Esqueleto de la fase 0 para un ERP multi-tenant con TypeScript, Express, MongoDB Atlas, React Native/Web y Redis.
+ERP multi-empresa para constructoras con enfoque ecológico: avance físico, presupuesto ejercido, certificaciones ambientales (LEED, EDGE) e impacto medido (CO₂, energía, agua) de todas las obras en un panel. Incluye API (Express + MongoDB Atlas), app Android (React Native) y web (React + Vite), sincronizadas en tiempo real.
 
 ## Estructura del repositorio
 
@@ -8,14 +8,14 @@ Monorepo con workspaces de pnpm.
 
 | Carpeta | Contenido |
 | --- | --- |
-| `apps/api` | API REST (Node.js + Express). Módulos de negocio reservados en `src/modules`. |
+| `apps/api` | API REST + canal WebSocket (Node.js + Express). Módulos `identity` y `obras` en `src/modules`. |
 | `apps/mobile` | App Android (React Native 0.73). Proyecto nativo en `apps/mobile/android`. |
-| `apps/web` | Cliente web (React Native Web), aún sin pantallas. |
-| `packages/api-client` | Cliente HTTP compartido por móvil y web. |
-| `packages/ui` | Componentes de interfaz compartidos. |
-| `packages/domain` | Tipos de dominio compartidos. |
+| `apps/web` | Panel web (React + Vite), publicado en Cloudflare Pages. |
+| `packages/domain` | Esquemas (Zod), tipos y reglas de negocio compartidas: estados, transiciones, resumen del dashboard, permisos, dinero. |
+| `packages/api-client` | Cliente HTTP con sesión y renovación de tokens, canal en tiempo real y `ObrasStore`, compartido por app y web. |
+| `packages/ui` | Componentes de React Native compartidos. |
 | `packages/config` | Carga y validación (Zod) de las variables de entorno. |
-| `infra` | `Dockerfile` de la API y `docker-compose.yml` (API + Redis). |
+| `infra` | `Dockerfile` de la API, `docker-compose.yml` (API + Redis) y el Worker de Cloudflare que mantiene despierta la API. |
 | `docs/adr` | Decisiones de arquitectura. |
 
 ## Requisitos
@@ -95,11 +95,17 @@ Remove-Item Env:ADMIN_PASSWORD
 
 Opcionales: `--tenant <id>` (por defecto `DEFAULT_TENANT_ID`) y `--role superadmin`.
 
+Para tener datos con los que probar, carga las 6 obras de ejemplo del prototipo en el tenant (solo si está vacío):
+
+```powershell
+pnpm --filter @erp/api seed-demo
+```
+
 ### Convenciones de la API
 
 - Las respuestas exitosas tienen la forma `{ success: true, data, timestamp }`. Los listados devuelven en `data` el objeto `{ items, page, pageSize, total }` y aceptan `?page=` (desde 1), `?pageSize=` (máximo 100) y, en catálogos, `?q=` como búsqueda de texto literal.
 - Cantidades, costos, precios y tasas viajan como **texto decimal** (`"12.50"`), nunca como número; se guardan como `Decimal128`.
-- Cada ruta exige un permiso `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`). Con los roles actuales, `viewer` solo lee, `user` lee y crea, `manager` también modifica y `admin` puede todo. Algunas rutas son solo para `admin`.
+- Cada ruta exige un permiso `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`). Con los roles actuales, `viewer` solo lee, `user` lee y crea, `manager` también modifica y aprueba (acción `approve`, hoy solo en obras) y `admin` puede todo. Algunas rutas son solo para `admin`.
 
 ### Catálogos
 
@@ -139,11 +145,42 @@ La reconciliación también se puede ejecutar desde la terminal, contra la base 
 pnpm --filter @erp/api reconcile-inventory -- --tenant <id>
 ```
 
+### Roles
+
+| Rol | Puede |
+| --- | --- |
+| `admin` / `superadmin` | Todo, incluido gestionar usuarios y eliminar obras. |
+| `manager` (gerente de proyecto) | Ver, crear y editar obras; aprobar o solicitar cambios. |
+| `user` (residente de obra) | Ver obras, crear propuestas y registrar mediciones ambientales. |
+| `viewer` | Solo consulta. |
+
+Crea usuarios con `POST /users` (como admin) indicando `role`.
+
+### Obras
+
+| Ruta | Descripción |
+| --- | --- |
+| `GET /obras?estado=&q=` | Obras del tenant; filtro por estado derivado y búsqueda por nombre, cliente o ubicación. |
+| `GET /obras/resumen` | KPIs del dashboard: activas, retrasadas, avance promedio, CO₂ medido, presupuesto ejercido, certificaciones en curso. |
+| `GET /obras/:id` | Ficha completa. |
+| `POST /obras` | Crea una obra en etapa `propuesta`. |
+| `PATCH /obras/:id` | Actualiza campos (fases y materiales se reemplazan completos). |
+| `POST /obras/:id/aprobar` | Propuesta → ejecución → certificación (o completada si no tiene) → completada. Cerrar la ejecución exige todas las fases al 100%. |
+| `POST /obras/:id/solicitar-cambios` | `{ comentario }`. En propuesta queda registrada; en certificación regresa a ejecución. |
+| `POST /obras/:id/mediciones` | Registra CO₂ evitado, energía y agua medidos; su suma es el impacto real de la obra. |
+| `DELETE /obras/:id` | Borrado lógico (solo admin). |
+
+El **estado** que ven los usuarios se calcula al leer: una obra en ejecución pasa a `retrasada` cuando una fase venció sin terminarse o va 20 puntos por debajo del avance esperado. Toda acción queda en la colección `audit_log`.
+
+### Tiempo real
+
+La web y la app abren `wss://<api>/ws` y envían `{ "type": "auth", "token": "<accessToken>" }`. Cada cambio en una obra se difunde a las sesiones del mismo tenant, así lo que se aprueba en la web aparece al instante en la app y al revés. El canal se reconecta solo y, al reconectar, recarga la lista por si hubo cambios mientras estaba caído.
+
 ## Ejecutar la app móvil
 
 La app se compone de tres procesos. Abre una terminal para cada uno en la raíz del repo.
 
-1. **API** (la app la consulta para mostrar su estado):
+1. **API**:
 
    ```powershell
    pnpm dev
@@ -163,6 +200,9 @@ La app se compone de tres procesos. Abre una terminal para cada uno en la raíz 
 
    También puedes abrir la carpeta `apps/mobile/android` en Android Studio y pulsar Run. Metro debe seguir corriendo.
 
+   Tras añadir o quitar dependencias nativas (como `react-native-keychain`) hay que volver a compilar con este paso; recargar Metro no basta.
+
+La app guarda la sesión cifrada en el Keystore de Android (`react-native-keychain`).
 ### Crear el dispositivo virtual
 
 1. En Android Studio abre Device Manager y pulsa Create Device.
@@ -174,11 +214,23 @@ El emulador necesita virtualización activada en la BIOS (VT-x o SVM) y Windows 
 
 ### Dirección de la API desde la app
 
-El emulador no ve `localhost` del PC: en Android usa `10.0.2.2`. La URL está en `apps/mobile/App.tsx` (`http://10.0.2.2:3000`). Para probar contra la API desplegada hay que cambiarla por la URL pública.
+La URL está en `apps/mobile/src/lib/apiClient.ts`. En builds de desarrollo usa la API local (el emulador no ve `localhost` del PC: en Android es `10.0.2.2:3000`); en builds release usa la API de Render.
 
 ### Logo y recursos
 
-Los logos están en `apps/mobile/src/assets`. La pantalla de inicio usa `logo1.png` y se ajusta con `LOGO_ZOOM` en `App.tsx`. El icono del launcher se genera en Android Studio: clic derecho en `res`, New, Image Asset.
+Los logos están en `apps/mobile/src/assets`; el login usa `logo2.png`. El icono del launcher se genera en Android Studio: clic derecho en `res`, New, Image Asset.
+
+## Ejecutar la web
+
+Con la API corriendo (`pnpm dev`):
+
+```powershell
+pnpm --filter @erp/web dev
+```
+
+Abre `http://localhost:5173`. Para apuntar a otra API, define `VITE_API_URL` (por ejemplo en `apps/web/.env.local`). Sin ella, usa `http://localhost:3000` en desarrollo y la API de Render en el build de producción.
+
+Para ver la sincronización, abre la web y la app con usuarios del mismo tenant: aprobar una obra, mover el avance de una fase o registrar una medición en una se refleja en la otra sin recargar.
 
 ## Desarrollo con Docker
 
@@ -208,7 +260,13 @@ También puedes usar `pnpm.cmd` o la terminal Command Prompt.
 
 **`/health` devuelve `503`.** La API arrancó pero no llega a MongoDB. Revisa la URI y que tu IP esté permitida en Network Access de Atlas.
 
-**La app muestra `error: Network request failed`.** La API no está corriendo, o el emulador no la alcanza. Confirma que `pnpm dev` está activo y que `App.tsx` usa `10.0.2.2` en el emulador.
+**La app dice "No se pudo conectar con el servidor".** La API no está corriendo, o el emulador no la alcanza. Confirma que `pnpm dev` está activo y que es un build de desarrollo (usa `10.0.2.2`).
+
+**La app se cierra con `RNKeychainManager` o un módulo nativo no encontrado.** La app no se recompiló tras instalar dependencias nativas: `pnpm --filter @erp/mobile android`.
+
+**La web desplegada no puede iniciar sesión (error de CORS).** Falta el dominio de la web en `CORS_ORIGINS` de Render.
+
+**El indicador dice "Sin conexión" pero los datos cargan.** El canal WebSocket no se pudo abrir (proxy o red que lo bloquea); los datos siguen funcionando, pero sin actualizaciones en vivo hasta que se reconecte.
 
 **La app no encuentra Metro o muestra pantalla roja.** Verifica que `pnpm --filter @erp/mobile start` esté activo. Con el emulador, `adb reverse tcp:8081 tcp:8081` suele resolverlo.
 

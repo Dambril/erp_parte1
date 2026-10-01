@@ -1,27 +1,18 @@
 import type { RequestHandler } from 'express';
-import type { ModuleAction, PermissionAction, PermissionModule, Role } from '@erp/domain';
+import { ROLE_ACTIONS, roleCan, type ModuleAction, type PermissionAction, type PermissionModule, type Role } from '@erp/domain';
 import { HttpError } from '../http-error';
 
 export type { PermissionAction } from '@erp/domain';
 export interface PermissionRequirement { module: PermissionModule; action: PermissionAction }
 
-// RBAC base. Punto único para ajustar permisos cuando cada módulo defina los suyos.
-const ROLE_ACTIONS: Record<Role, readonly PermissionAction[] | 'all'> = {
-  superadmin: 'all',
-  admin: 'all',
-  manager: ['read', 'create', 'update'],
-  user: ['read', 'create'],
-  viewer: ['read'],
-};
-
 // Módulos de administración: solo admin y superadmin, sea cual sea la acción.
+// La matriz de roles (`ROLE_ACTIONS`) vive en @erp/domain para que los clientes oculten lo que el rol no puede hacer.
 const ADMIN_ONLY_MODULES = new Set<PermissionModule>(['users', 'inventory.settings', 'inventory.reconciliation']);
 
 export function can(role: Role, { module, action }: PermissionRequirement): boolean {
-  const allowed = ROLE_ACTIONS[role];
-  if (allowed === 'all') return true;
+  if (ROLE_ACTIONS[role] === 'all') return true;
   if (ADMIN_ONLY_MODULES.has(module)) return false;
-  return allowed.includes(action);
+  return roleCan(role, action);
 }
 
 /**

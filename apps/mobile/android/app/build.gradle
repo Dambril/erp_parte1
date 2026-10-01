@@ -74,9 +74,10 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    // El namespace (paquete Java de MainActivity) puede diferir del applicationId, que es el id público en Play Store.
     namespace "com.erpmobile"
     defaultConfig {
-        applicationId "com.erpmobile"
+        applicationId "com.tssera.construcciones"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -89,15 +90,24 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Keystore propio: sus datos se leen de ~/.gradle/gradle.properties (nunca del repo).
+        // Ver docs/despliegue.md, sección "App Android".
+        if (project.hasProperty('TSSERA_UPLOAD_STORE_FILE')) {
+            release {
+                storeFile file(TSSERA_UPLOAD_STORE_FILE)
+                storePassword TSSERA_UPLOAD_STORE_PASSWORD
+                keyAlias TSSERA_UPLOAD_KEY_ALIAS
+                keyPassword TSSERA_UPLOAD_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Sin keystore propio configurado se firma con el de debug: sirve para probar el APK, no para publicar.
+            signingConfig project.hasProperty('TSSERA_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
