@@ -48,6 +48,9 @@ Variables (validadas al arrancar en `packages/config`):
 | `DEFAULT_TENANT_ID` | Sí | Tenant por defecto en desarrollo. |
 | `PORT` | No | Por defecto `3000`. |
 | `REDIS_URL` | No | Solo hará falta cuando existan jobs con BullMQ. |
+| `RESEND_API_KEY` | No | API key de Resend. Sin ella los correos no se envían (solo log). |
+| `EMAIL_FROM` | No | Remitente. Por defecto `ERP <onboarding@resend.dev>`, que solo entrega al correo dueño de la cuenta de Resend. |
+| `PASSWORD_RESET_URL` | No | Pantalla de restablecer contraseña; el correo añade `?token=...`. Sin ella, el correo trae el código. |
 | `CORS_ORIGINS` | No | Orígenes web permitidos, separados por comas. Si falta: cualquiera en desarrollo, ninguno en producción. Las apps nativas no lo necesitan. |
 | `NODE_ENV` | No | `development`, `test` o `production`. |
 
@@ -76,6 +79,8 @@ Todas las rutas salvo `/health` y `/auth/*` exigen `Authorization: Bearer <acces
 | `POST /auth/login` | `{ email, password }` → `accessToken`, `refreshToken` y el usuario. Máximo 10 intentos por IP cada 15 minutos. |
 | `POST /auth/refresh` | `{ refreshToken }` → par de tokens nuevo. El anterior queda invalidado; reutilizarlo cierra todas las sesiones. |
 | `POST /auth/logout` | `{ refreshToken }` → revoca la sesión. |
+| `POST /auth/forgot-password` | `{ email }` → 202 siempre (no revela si el email existe); envía el correo con el token (vence en 60 min). |
+| `POST /auth/reset-password` | `{ token, password }` → 204. Token de un solo uso; cierra todas las sesiones del usuario. |
 | `GET /auth/me` | Usuario autenticado. |
 | `GET /users` | Usuarios del tenant (solo `admin`). |
 | `POST /users` | Crea un usuario en el tenant: `{ email, name, password, role? }` (solo `admin`). |

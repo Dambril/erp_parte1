@@ -101,6 +101,17 @@ export const CreateUserRequestSchema = z.object({
 });
 export type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>;
 
+export const ForgotPasswordRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+});
+export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequestSchema>;
+
+export const ResetPasswordRequestSchema = z.object({
+  token: z.string().min(1).max(200),
+  password: PasswordSchema,
+});
+export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequestSchema>;
+
 export type PublicUser = Omit<User, 'custom'>;
 
 export interface AuthSession {

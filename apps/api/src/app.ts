@@ -10,6 +10,7 @@ import { authMiddleware } from './core/middlewares/auth';
 import { auditMiddleware } from './core/middlewares/audit';
 import { requestLogger } from './core/middlewares/request-logger';
 import { identityRoutes } from './modules/identity/identity.routes';
+import type { Mailer } from './platform/integrations/email';
 import { catalogsRoutes } from './modules/catalogs/catalogs.routes';
 import { inventoryRoutes } from './modules/inventory/inventory.routes';
 
@@ -19,7 +20,7 @@ function corsOrigin(config: ServerConfig): cors.CorsOptions['origin'] {
   return config.nodeEnv !== 'production';
 }
 
-export function createApp(config: ServerConfig): express.Express {
+export function createApp(config: ServerConfig, mailer?: Mailer): express.Express {
   const app = express();
   // Render (y cualquier PaaS) termina TLS en un proxy; sin esto req.ip sería la del proxy y el rate limit sería global.
   app.set('trust proxy', 1);
@@ -49,7 +50,7 @@ export function createApp(config: ServerConfig): express.Express {
     });
   });
 
-  const identity = identityRoutes(config);
+  const identity = identityRoutes(config, mailer);
   app.use('/auth', identity.auth);
   app.use('/users', identity.users);
   app.use('/catalogs', catalogsRoutes());

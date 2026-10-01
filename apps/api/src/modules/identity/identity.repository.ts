@@ -4,6 +4,7 @@ import { TenantRepository, toApiDocument, type TenantScopedDocument } from '../.
 
 export const USERS_COLLECTION = 'users';
 export const REFRESH_TOKENS_COLLECTION = 'refresh_tokens';
+export const PASSWORD_RESETS_COLLECTION = 'password_resets';
 
 export interface UserDocument extends TenantScopedDocument {
   email: string;
@@ -60,10 +61,40 @@ export class RefreshTokensRepository {
   }
 }
 
+/** Solicitud de restablecimiento. El _id es el SHA-256 del token: el token en claro solo existe en el correo. */
+export interface PasswordResetDocument {
+  _id: string;
+  userId: string;
+  tenantId: string;
+  createdAt: Date;
+  expiresAt: Date;
+  usedAt: Date | null;
+}
+
+export class PasswordResetsRepository {
+  public constructor(private readonly collection: Collection<PasswordResetDocument>) {}
+
+  /** Una solicitud nueva invalida las anteriores aún pendientes del mismo usuario. */
+  async createForUser(reset: Omit<PasswordResetDocument, 'createdAt' | 'usedAt'>): Promise<void> {
+    await this.collection.deleteMany({ userId: reset.userId, usedAt: null });
+    await this.collection.insertOne({ ...reset, createdAt: new Date(), usedAt: null });
+  }
+
+  /** Consume el token de forma atómica; devuelve null si no existe, ya se usó o caducó. */
+  async consume(tokenHash: string): Promise<PasswordResetDocument | null> {
+    const now = new Date();
+    return this.collection.findOneAndUpdate(
+      { _id: tokenHash, usedAt: null, expiresAt: { $gt: now } },
+      { $set: { usedAt: now } },
+    );
+  }
+}
+
 export function identityRepositories(db: Db) {
   return {
     users: new UsersRepository(db.collection<UserDocument>(USERS_COLLECTION)),
     refreshTokens: new RefreshTokensRepository(db.collection<RefreshTokenDocument>(REFRESH_TOKENS_COLLECTION)),
+    passwordResets: new PasswordResetsRepository(db.collection<PasswordResetDocument>(PASSWORD_RESETS_COLLECTION)),
   };
 }
 
@@ -74,6 +105,10 @@ export async function ensureIdentityIndexes(db: Db): Promise<void> {
   ]);
   await db.collection(REFRESH_TOKENS_COLLECTION).createIndexes([
     // TTL: Mongo borra los tokens caducados automáticamente.
+    { key: { expiresAt: 1 }, name: 'expires_ttl', expireAfterSeconds: 0 },
+    { key: { userId: 1 }, name: 'user' },
+  ]);
+  await db.collection(PASSWORD_RESETS_COLLECTION).createIndexes([
     { key: { expiresAt: 1 }, name: 'expires_ttl', expireAfterSeconds: 0 },
     { key: { userId: 1 }, name: 'user' },
   ]);

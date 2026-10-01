@@ -1,14 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { MongoServerError } from 'mongodb';
-import type { AuthSession, CreateUserRequest, LoginRequest, PublicUser } from '@erp/domain';
+import type { AuthSession, CreateUserRequest, LoginRequest, PublicUser, ResetPasswordRequest } from '@erp/domain';
 import type { ServerConfig } from '@erp/config';
 import { HttpError } from '../../core/http-error';
+import { sendEmailSafely, type Mailer } from '../../platform/integrations/email';
 import type { RequestUser } from '../../core/middlewares/auth';
 import { getDummyHash, hashPassword, verifyPassword } from './password';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from './tokens';
+import { passwordResetEmail, welcomeEmail } from './identity.emails';
 import {
-  toPublicUser, type RefreshTokensRepository, type UserDocument, type UsersRepository,
+  toPublicUser, type PasswordResetsRepository, type RefreshTokensRepository, type UserDocument, type UsersRepository,
 } from './identity.repository';
+
+const RESET_TOKEN_MINUTES = 60;
+const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 const invalidCredentials = () => new HttpError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
 const invalidRefreshToken = () => new HttpError(401, 'INVALID_REFRESH_TOKEN', 'Invalid or expired refresh token');
@@ -18,6 +23,8 @@ export class IdentityService {
     private readonly users: UsersRepository,
     private readonly refreshTokens: RefreshTokensRepository,
     private readonly config: ServerConfig,
+    private readonly passwordResets: PasswordResetsRepository,
+    private readonly mailer: Mailer,
   ) {}
 
   async login({ email, password }: LoginRequest): Promise<AuthSession> {
@@ -62,6 +69,32 @@ export class IdentityService {
     }
   }
 
+  /**
+   * Responde igual exista o no el email (no revela qué correos están registrados).
+   * El envío no se espera: así tampoco se filtra por tiempo de respuesta ni se cuelga si Resend tarda.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.users.findActiveByEmailForLogin(email);
+    if (!user) return;
+    const token = randomBytes(32).toString('base64url');
+    await this.passwordResets.createForUser({
+      _id: hashResetToken(token),
+      userId: user._id,
+      tenantId: user.tenantId,
+      expiresAt: new Date(Date.now() + RESET_TOKEN_MINUTES * 60_000),
+    });
+    void sendEmailSafely(this.mailer, passwordResetEmail(user.email, user.name, token, this.config.passwordResetUrl, RESET_TOKEN_MINUTES));
+  }
+
+  /** Cambia la contraseña con un token de un solo uso y cierra todas las sesiones abiertas del usuario. */
+  async resetPassword({ token, password }: ResetPasswordRequest): Promise<void> {
+    const reset = await this.passwordResets.consume(hashResetToken(token));
+    if (!reset) throw new HttpError(400, 'INVALID_RESET_TOKEN', 'Invalid or expired reset token');
+    const user = await this.users.updateById(reset.userId, reset.tenantId, { passwordHash: await hashPassword(password) });
+    if (!user) throw new HttpError(400, 'INVALID_RESET_TOKEN', 'Invalid or expired reset token');
+    await this.refreshTokens.revokeAllForUser(user._id);
+  }
+
   async getUser(userId: string, tenantId: string): Promise<PublicUser> {
     const user = await this.users.findById(userId, tenantId);
     if (!user) throw new HttpError(404, 'USER_NOT_FOUND', 'User not found');
@@ -84,6 +117,7 @@ export class IdentityService {
         role: input.role,
         passwordHash: await hashPassword(input.password),
       }, tenantId);
+      void sendEmailSafely(this.mailer, welcomeEmail(user.email, user.name));
       return toPublicUser(user);
     } catch (error) {
       if (error instanceof MongoServerError && error.code === 11000) {

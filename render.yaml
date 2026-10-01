@@ -34,5 +34,11 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+      - key: RESEND_API_KEY
+        sync: false # se pide en el panel; nunca en el repo
+      - key: EMAIL_FROM
+        value: ERP <onboarding@resend.dev>
+      - key: PASSWORD_RESET_URL
+        sync: false # opcional: URL de la pantalla de restablecer contraseña
       - key: DEFAULT_TENANT_ID
         value: dev-tenant-001

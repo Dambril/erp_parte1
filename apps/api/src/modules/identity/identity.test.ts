@@ -5,6 +5,7 @@ import { createApp } from '../../app';
 import { closeDB, connectDB, getDatabase } from '../../config/database';
 import { ensureIdentityIndexes, identityRepositories } from './identity.repository';
 import { IdentityService } from './identity.service';
+import type { EmailMessage, Mailer } from '../../platform/integrations/email';
 
 const config = {
   nodeEnv: 'test',
@@ -21,10 +22,12 @@ const config = {
 const PASSWORD = 'correct-horse-battery';
 let mongo: MongoMemoryServer;
 let app: ReturnType<typeof createApp>;
+const sent: EmailMessage[] = [];
+const mailer: Mailer = { send: async (message) => { sent.push(message); } };
 
 async function seedUser(email: string, role: 'admin' | 'viewer' | 'user', tenantId: string) {
-  const { users, refreshTokens } = identityRepositories(getDatabase());
-  return new IdentityService(users, refreshTokens, config).createUser({ email, name: email, role, password: PASSWORD }, tenantId);
+  const { users, refreshTokens, passwordResets } = identityRepositories(getDatabase());
+  return new IdentityService(users, refreshTokens, config, passwordResets, mailer).createUser({ email, name: email, role, password: PASSWORD }, tenantId);
 }
 
 async function login(email: string) {
@@ -44,7 +47,8 @@ beforeAll(async () => {
 
 // App nueva por test: el rate limit de login cuenta por instancia y aquí se hacen muchos logins.
 beforeEach(() => {
-  app = createApp(config);
+  sent.length = 0;
+  app = createApp(config, mailer);
 });
 
 afterAll(async () => {
@@ -184,5 +188,58 @@ describe('unknown routes', () => {
     const response = await request(app).get('/does-not-exist');
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('emails', () => {
+  it('sends a welcome email when a user is created, without the password', async () => {
+    await seedUser('welcome@example.com', 'user', 'tenant-a');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ to: 'welcome@example.com', subject: 'Tu cuenta fue creada' });
+    expect(sent[0]!.text + sent[0]!.html).not.toContain(PASSWORD);
+  });
+
+  describe('password reset', () => {
+    const NEW_PASSWORD = 'a-brand-new-password';
+    const tokenFromEmail = () => /código de restablecimiento es: (\S+)/.exec(sent[0]!.text)![1]!;
+
+    it('answers the same for unknown emails and sends nothing', async () => {
+      const response = await request(app).post('/auth/forgot-password').send({ email: 'nobody@example.com' });
+      expect(response.status).toBe(202);
+      expect(sent).toHaveLength(0);
+    });
+
+    it('resets the password once, revokes sessions and rejects a reused token', async () => {
+      await seedUser('reset@example.com', 'user', 'tenant-a');
+      const { refreshToken } = await login('reset@example.com');
+      sent.length = 0;
+
+      expect((await request(app).post('/auth/forgot-password').send({ email: 'reset@example.com' })).status).toBe(202);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.to).toBe('reset@example.com');
+      const token = tokenFromEmail();
+
+      expect((await request(app).post('/auth/reset-password').send({ token, password: NEW_PASSWORD })).status).toBe(204);
+      expect((await request(app).post('/auth/login').send({ email: 'reset@example.com', password: PASSWORD })).status).toBe(401);
+      expect((await request(app).post('/auth/login').send({ email: 'reset@example.com', password: NEW_PASSWORD })).status).toBe(200);
+      expect((await request(app).post('/auth/refresh').send({ refreshToken })).status).toBe(401);
+
+      const reuse = await request(app).post('/auth/reset-password').send({ token, password: 'another-password-1' });
+      expect(reuse.status).toBe(400);
+      expect(reuse.body.error.code).toBe('INVALID_RESET_TOKEN');
+    });
+
+    it('rejects an invented token and a weak password', async () => {
+      expect((await request(app).post('/auth/reset-password').send({ token: 'invented', password: NEW_PASSWORD })).status).toBe(400);
+      expect((await request(app).post('/auth/reset-password').send({ token: 'invented', password: 'short' })).status).toBe(400);
+    });
+
+    it('invalidates the previous token when a new one is requested', async () => {
+      await seedUser('twice@example.com', 'user', 'tenant-a');
+      await request(app).post('/auth/forgot-password').send({ email: 'twice@example.com' });
+      const first = /código de restablecimiento es: (\S+)/.exec(sent.at(-1)!.text)![1]!;
+      await request(app).post('/auth/forgot-password').send({ email: 'twice@example.com' });
+      expect((await request(app).post('/auth/reset-password').send({ token: first, password: NEW_PASSWORD })).status).toBe(400);
+    });
   });
 });

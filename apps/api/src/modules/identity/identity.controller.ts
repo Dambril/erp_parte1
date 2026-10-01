@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
-import { CreateUserRequestSchema, LoginRequestSchema, RefreshRequestSchema } from '@erp/domain';
+import {
+  CreateUserRequestSchema, ForgotPasswordRequestSchema, LoginRequestSchema, RefreshRequestSchema, ResetPasswordRequestSchema,
+} from '@erp/domain';
 import type { IdentityService } from './identity.service';
 
 function ok<T>(response: Response, data: T, status = 200): void {
@@ -26,6 +28,16 @@ export class IdentityController {
   logout = async (request: Request, response: Response) => {
     const { refreshToken } = RefreshRequestSchema.parse(request.body);
     await this.service().logout(refreshToken);
+    response.status(204).end();
+  };
+
+  forgotPassword = async (request: Request, response: Response) => {
+    await this.service().forgotPassword(ForgotPasswordRequestSchema.parse(request.body).email);
+    ok(response, { message: 'If the email is registered, a reset link was sent' }, 202);
+  };
+
+  resetPassword = async (request: Request, response: Response) => {
+    await this.service().resetPassword(ResetPasswordRequestSchema.parse(request.body));
     response.status(204).end();
   };
 

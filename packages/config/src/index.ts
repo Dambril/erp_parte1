@@ -11,6 +11,12 @@ export const serverConfigSchema = z.object({
   jwtRefreshExpiresIn: z.string().default('7d'),
   // Opcional mientras no haya jobs de BullMQ; hacerlo obligatorio al introducir colas.
   redisUrl: z.string().url('REDIS_URL must be a valid URL').optional(),
+  // Correo transaccional (Resend). Sin API key los correos no se envían, solo se registra en el log.
+  resendApiKey: z.string().min(1).optional(),
+  // Remitente; por defecto el de pruebas de Resend, que solo entrega al correo dueño de la cuenta.
+  emailFrom: z.string().min(1).optional(),
+  // URL de la pantalla de restablecer contraseña; el correo añade ?token=... Si falta, el correo solo trae el código.
+  passwordResetUrl: z.string().url('PASSWORD_RESET_URL must be a valid URL').optional(),
   defaultTenantId: z.string().min(1, 'DEFAULT_TENANT_ID is required'),
   // Orígenes web permitidos por CORS. Vacío: en desarrollo se permite cualquiera; en producción, ninguno.
   // Las apps nativas no envían Origin, así que no dependen de esta lista.
@@ -30,6 +36,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jwtRefreshSecret: env.JWT_REFRESH_SECRET,
     jwtRefreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
     redisUrl: env.REDIS_URL || undefined,
+    resendApiKey: env.RESEND_API_KEY || undefined,
+    emailFrom: env.EMAIL_FROM || undefined,
+    passwordResetUrl: env.PASSWORD_RESET_URL || undefined,
     defaultTenantId: env.DEFAULT_TENANT_ID,
     corsOrigins: env.CORS_ORIGINS
       ? env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)

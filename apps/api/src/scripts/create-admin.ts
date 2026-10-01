@@ -16,6 +16,7 @@ import { closeDB, connectDB, getDatabase } from '../config/database';
 import { ensureIndexes } from '../indexes';
 import { identityRepositories } from '../modules/identity/identity.repository';
 import { IdentityService } from '../modules/identity/identity.service';
+import { NoopMailer } from '../platform/integrations/email';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env.local') });
 
@@ -43,8 +44,8 @@ async function run(): Promise<void> {
   try {
     const db = getDatabase();
     await ensureIndexes(db);
-    const { users, refreshTokens } = identityRepositories(db);
-    const user = await new IdentityService(users, refreshTokens, config).createUser(input, values.tenant);
+    const { users, refreshTokens, passwordResets } = identityRepositories(db);
+    const user = await new IdentityService(users, refreshTokens, config, passwordResets, new NoopMailer()).createUser(input, values.tenant);
     console.log(`Usuario creado: ${user.email} (${user.role}) en el tenant ${user.tenantId}`);
   } finally {
     await closeDB();

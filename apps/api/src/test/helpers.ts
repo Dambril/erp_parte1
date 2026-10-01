@@ -8,6 +8,7 @@ import { closeDB, connectDB, getDatabase } from '../config/database';
 import { ensureIndexes } from '../indexes';
 import { identityRepositories } from '../modules/identity/identity.repository';
 import { IdentityService } from '../modules/identity/identity.service';
+import { NoopMailer } from '../platform/integrations/email';
 
 export const testConfig = {
   nodeEnv: 'test',
@@ -41,8 +42,8 @@ export async function stopDatabase(replSet: MongoMemoryReplSet | undefined): Pro
 
 /** Crea el usuario y devuelve su access token (el login pasa por la API real). */
 export async function createUserAndLogin(email: string, role: Role, tenantId: string): Promise<string> {
-  const { users, refreshTokens } = identityRepositories(getDatabase());
-  await new IdentityService(users, refreshTokens, testConfig).createUser({ email, name: email, role, password: TEST_PASSWORD }, tenantId);
+  const { users, refreshTokens, passwordResets } = identityRepositories(getDatabase());
+  await new IdentityService(users, refreshTokens, testConfig, passwordResets, new NoopMailer()).createUser({ email, name: email, role, password: TEST_PASSWORD }, tenantId);
   const response = await request(createApp(testConfig)).post('/auth/login').send({ email, password: TEST_PASSWORD });
   if (response.status !== 200) throw new Error(`Login failed for ${email}: ${response.status}`);
   return response.body.data.accessToken as string;
