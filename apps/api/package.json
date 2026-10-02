@@ -6,7 +6,7 @@
     "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
     "start": "node --enable-source-maps dist/main.js",
     "dev": "tsx watch src/main.ts",
-    "create-admin": "tsx src/scripts/create-admin.ts",
+    "seed": "tsx src/scripts/seed.ts",
     "reconcile-inventory": "tsx src/scripts/reconcile-inventory.ts",
     "seed-demo": "tsx src/scripts/seed-demo.ts",
     "lint": "eslint src --ext .ts",
