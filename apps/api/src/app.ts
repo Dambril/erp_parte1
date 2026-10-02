@@ -14,6 +14,7 @@ import type { EmailSender } from './platform/integrations/email';
 import { catalogsRoutes } from './modules/catalogs/catalogs.routes';
 import { inventoryRoutes } from './modules/inventory/inventory.routes';
 import { obrasRoutes } from './modules/obras/obras.routes';
+import { constructionRoutes } from './modules/construction/construction.routes';
 
 function corsOrigin(config: ServerConfig): cors.CorsOptions['origin'] {
   if (config.corsOrigins.length > 0) return config.corsOrigins;
@@ -56,6 +57,13 @@ export function createApp(
           'GET /users', 'POST /users',
           'GET /obras', 'GET /obras/resumen', 'GET /obras/:id', 'POST /obras', 'PATCH /obras/:id', 'DELETE /obras/:id',
           'POST /obras/:id/aprobar', 'POST /obras/:id/solicitar-cambios', 'POST /obras/:id/mediciones',
+          'GET /construction/dashboard', 'GET /construction/projects', 'GET /construction/projects/:id',
+          'PATCH /construction/projects/:id', 'POST /construction/projects/:id/transition',
+          'POST /construction/projects/:id/archive', 'POST /construction/projects/:id/unarchive', 'DELETE /construction/projects/:id',
+          'GET /construction/projects/:id/budget-movements', 'POST /construction/projects/:id/budget-movements',
+          'PATCH /construction/projects/:id/certification/requirements/:code', 'GET /construction/projects/:id/activity',
+          'GET /construction/proposals', 'GET /construction/proposals/:id',
+          'POST /construction/proposals/:id/approve', 'POST /construction/proposals/:id/reject',
           `WS ${REALTIME_PATH}`,
         ],
       },
@@ -85,6 +93,7 @@ export function createApp(
   app.use('/catalogs', catalogsRoutes());
   app.use('/inventory', inventoryRoutes());
   app.use('/obras', obrasRoutes(publish));
+  app.use('/construction', constructionRoutes(publish));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

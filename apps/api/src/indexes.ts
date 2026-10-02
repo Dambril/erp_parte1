@@ -1,9 +1,11 @@
 import type { Db } from 'mongodb';
 import { ensureAuditIndexes } from './core/audit';
+import { ensureCountersIndexes } from './core/counters';
 import { ensureCatalogsIndexes } from './modules/catalogs/catalogs.repository';
 import { ensureIdentityIndexes, migrateIdentityDocuments } from './modules/identity/identity.repository';
 import { ensureInventoryIndexes } from './modules/inventory/inventory.repository';
 import { ensureObrasIndexes } from './modules/obras/obras.repository';
+import { ensureConstructionIndexes } from './modules/construction/construction.container';
 
 /**
  * Crea (idempotente) todos los índices de la API y aplica las migraciones de datos pendientes, también idempotentes.
@@ -13,7 +15,9 @@ export async function ensureIndexes(db: Db): Promise<void> {
   await ensureIdentityIndexes(db);
   await migrateIdentityDocuments(db);
   await ensureAuditIndexes(db);
+  await ensureCountersIndexes(db);
   await ensureCatalogsIndexes(db);
   await ensureInventoryIndexes(db);
   await ensureObrasIndexes(db);
+  await ensureConstructionIndexes(db);
 }
