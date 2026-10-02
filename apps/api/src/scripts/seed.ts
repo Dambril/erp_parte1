@@ -1,6 +1,7 @@
 /**
- * Prepara una empresa con su administrador y un usuario para poder iniciar sesión. Idempotente:
- * la empresa y las cuentas que ya existen (por correo) no se modifican.
+ * Prepara una empresa con su administrador y un usuario para poder iniciar sesión, y carga las obras y
+ * propuestas de demostración del módulo de construcción. Idempotente: la empresa y las cuentas que ya existen
+ * (por correo) no se modifican, y los datos de construcción solo se cargan si el tenant no tiene ninguno.
  *
  *   pnpm --filter @erp/api seed
  *
@@ -20,6 +21,7 @@ import { ensureIndexes } from '../indexes';
 import { identityRepositories } from '../modules/identity/identity.repository';
 import { createIdentityService } from '../modules/identity/identity.routes';
 import { NoopEmailSender } from '../platform/integrations/email';
+import { SEED_CONSTRUCTION_SUMMARY, seedConstruction } from './seed-construction';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env.local') });
 
@@ -71,6 +73,16 @@ async function run(): Promise<void> {
     }
     const user = await service.createUser(input, tenantId);
     console.log(`Usuario creado: ${user.email} (${user.role}) en el tenant ${user.tenantId}`);
+  }
+
+  // Las obras de demostración quedan a nombre del administrador del seed.
+  const admin = await users.findByEmailAcrossTenants(inputs[0].email);
+  if (!admin || admin.tenantId !== tenantId) {
+    console.log(`El administrador ${inputs[0].email} no pertenece al tenant ${tenantId}; no se cargaron datos de construcción.`);
+  } else if (await seedConstruction(db, tenantId, admin._id)) {
+    console.log(`Construcción: se cargaron ${SEED_CONSTRUCTION_SUMMARY}.`);
+  } else {
+    console.log('Construcción: el tenant ya tenía obras o propuestas; no se cargó nada.');
   }
 }
 
