@@ -402,3 +402,5 @@ export interface ConstructionChangedEvent {
   entity: 'project' | 'proposal';
   id: string;
 }
+
+export type RealtimeEvent = ConstructionChangedEvent;

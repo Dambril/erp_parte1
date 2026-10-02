@@ -463,5 +463,4 @@ export interface ReconciliationReport {
   balancesChecked: number;
   differences: ReconciliationDifference[];
 }
-export * from './obras';
 export * from './construction';

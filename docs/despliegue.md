@@ -53,7 +53,7 @@ Los logs de cada ejecución se ven en Cloudflare → Workers & Pages → `erp-ap
 
 Render da 750 horas gratuitas al mes por cuenta: alcanzan para un servicio encendido todo el mes, pero no para dos.
 
-Para poder iniciar sesión hace falta la empresa y sus primeras cuentas: créalas con `pnpm --filter @erp/api seed` (ver [README](../README.md#autenticación)) desde tu equipo con `.env.local` apuntando a la misma base que Render. Con la misma configuración, `pnpm --filter @erp/api seed-demo` carga obras de ejemplo si quieres enseñar el sistema con datos.
+Para poder iniciar sesión hace falta la empresa y sus primeras cuentas: créalas con `pnpm --filter @erp/api seed` (ver [README](../README.md#autenticación)) desde tu equipo con `.env.local` apuntando a la misma base que Render. Ese mismo comando carga las obras y propuestas de demostración si el tenant aún no tiene ninguna: ejecútalo contra producción solo si quieres esos datos ahí.
 
 La API no necesita nada extra para el tiempo real: Render admite WebSocket en el mismo servicio (`wss://<servicio>.onrender.com/ws`). Los sockets viven en memoria, así que el servicio debe tener **una sola instancia**; para escalar a varias habría que añadir un pub/sub (Redis).
 

@@ -1,4 +1,4 @@
-import { ApiClient, ObrasStore, type SessionStore } from '@erp/api-client';
+import { ApiClient, type SessionStore } from '@erp/api-client';
 
 // VITE_API_URL permite apuntar a otra API (p. ej. en Cloudflare Pages); si falta, local en
 // desarrollo y Render en producción.
@@ -34,4 +34,3 @@ try {
 }
 
 export const apiClient = new ApiClient({ baseUrl: API_URL, sessionStore });
-export const obrasStore = new ObrasStore(apiClient);

@@ -8,7 +8,6 @@
     "dev": "tsx watch src/main.ts",
     "seed": "tsx src/scripts/seed.ts",
     "reconcile-inventory": "tsx src/scripts/reconcile-inventory.ts",
-    "seed-demo": "tsx src/scripts/seed-demo.ts",
     "lint": "eslint src --ext .ts",
     "test": "jest --runInBand",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""

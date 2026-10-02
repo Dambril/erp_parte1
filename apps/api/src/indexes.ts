@@ -4,7 +4,6 @@ import { ensureCountersIndexes } from './core/counters';
 import { ensureCatalogsIndexes } from './modules/catalogs/catalogs.repository';
 import { ensureIdentityIndexes, migrateIdentityDocuments } from './modules/identity/identity.repository';
 import { ensureInventoryIndexes } from './modules/inventory/inventory.repository';
-import { ensureObrasIndexes } from './modules/obras/obras.repository';
 import { ensureConstructionIndexes } from './modules/construction/construction.container';
 
 /**
@@ -18,6 +17,5 @@ export async function ensureIndexes(db: Db): Promise<void> {
   await ensureCountersIndexes(db);
   await ensureCatalogsIndexes(db);
   await ensureInventoryIndexes(db);
-  await ensureObrasIndexes(db);
   await ensureConstructionIndexes(db);
 }

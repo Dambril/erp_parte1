@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { esErrorDeRed, mensajeError, permissionChecker, type ObrasState } from '@erp/api-client';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { esErrorDeRed, mensajeError, permissionChecker } from '@erp/api-client';
 import type { Company, MeResponse, Permission, PublicUser } from '@erp/domain';
-import { apiClient, obrasStore } from './lib/api';
+import { apiClient } from './lib/api';
 
 /** `offline`: hay sesión guardada pero no se pudo validar por falta de red. */
 export type SessionStatus = 'loading' | 'signedOut' | 'signedIn' | 'offline';
@@ -45,13 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [restore]);
 
-  // Carga las obras y abre el canal de tiempo real mientras haya sesión.
-  useEffect(() => {
-    if (status !== 'signedIn') return;
-    obrasStore.start();
-    return () => obrasStore.stop();
-  }, [status]);
-
   const value = useMemo<AuthValue>(() => ({
     status,
     user: me?.user ?? null,
@@ -80,12 +73,7 @@ export function useAuth(): AuthValue {
   return ctx;
 }
 
-export function useObras(): ObrasState & { store: typeof obrasStore } {
-  const state = useSyncExternalStore(obrasStore.subscribe, obrasStore.getSnapshot);
-  return { ...state, store: obrasStore };
-}
-
-/** Enrutado por hash (#/obras/123): funciona en Cloudflare Pages sin reglas de reescritura. */
+/** Enrutado por hash (#/recuperar): funciona en Cloudflare Pages sin reglas de reescritura. */
 export function useRuta(): string {
   const [ruta, setRuta] = useState(() => window.location.hash.slice(1) || '/');
   useEffect(() => {

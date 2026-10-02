@@ -1,17 +1,14 @@
 import type {
   AcceptInvitationRequest, ActivityEntry, AuthSession, BudgetMovement, CatalogResource, CatalogResources, CertificationRequirement,
-  CreateBudgetMovementRequest, CreateLotRequest, CreateMovementRequest, CreateObraInput, Dashboard, PageQuery, ProjectDetail,
+  CreateBudgetMovementRequest, CreateLotRequest, CreateMovementRequest, Dashboard, PageQuery, ProjectDetail,
   ProjectDetailWithAmounts, ProjectListItem, ProjectsQuery, ProjectStatus, ProposalDetail, ProposalDetailWithAmounts, ProposalsQuery,
   ProposalSummary, ProposalSummaryWithAmounts, UpdateProjectRequest, UpdateRequirementRequest,
-  CreateTransferRequest, InventoryMovement, InventorySettings, Kardex, KardexQuery, Lot, MedicionInput, MeResponse, Obra, ObrasQuery,
-  Paginated, Permission, ReconciliationReport, ResetPasswordRequest, ResumenObras, StockLevel, StockQuery, TransferResult,
-  UpdateObraInput,
-} from '@erp/domain';
+  CreateTransferRequest, InventoryMovement, InventorySettings, Kardex, KardexQuery, Lot, MeResponse,   Paginated, Permission, ReconciliationReport, ResetPasswordRequest, StockLevel, StockQuery, TransferResult,
+  } from '@erp/domain';
 import { ApiError } from './errors';
 
 export * from './errors';
 export * from './realtime';
-export * from './obras-store';
 
 export interface SessionTokens {
   accessToken: string;
@@ -182,24 +179,6 @@ export class ApiClient {
   realtimeUrl(): string {
     return `${this.baseUrl.replace(/^http/, 'ws')}/ws`;
   }
-
-  // ── Obras ───────────────────────────────────────────────────────
-
-  readonly obras = {
-    list: (query: ObrasQuery = {}) => {
-      const params = Object.entries(query).filter(([, value]) => value).map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`);
-      return this.send<Obra[]>('GET', `/obras${params.length ? `?${params.join('&')}` : ''}`);
-    },
-    resumen: () => this.send<ResumenObras>('GET', '/obras/resumen'),
-    get: (id: string) => this.send<Obra>('GET', `/obras/${encodeURIComponent(id)}`),
-    create: (input: CreateObraInput) => this.send<Obra>('POST', '/obras', input),
-    update: (id: string, input: UpdateObraInput) => this.send<Obra>('PATCH', `/obras/${encodeURIComponent(id)}`, input),
-    remove: (id: string) => this.send<void>('DELETE', `/obras/${encodeURIComponent(id)}`),
-    aprobar: (id: string, comentario?: string) => this.send<Obra>('POST', `/obras/${encodeURIComponent(id)}/aprobar`, { comentario }),
-    solicitarCambios: (id: string, comentario: string) =>
-      this.send<Obra>('POST', `/obras/${encodeURIComponent(id)}/solicitar-cambios`, { comentario }),
-    registrarMedicion: (id: string, input: MedicionInput) => this.send<Obra>('POST', `/obras/${encodeURIComponent(id)}/mediciones`, input),
-  };
 
   // ── Construcción ────────────────────────────────────────────────
   // Las respuestas traen montos solo si el usuario tiene `construction.budget:read_amounts` (lo decide la API).

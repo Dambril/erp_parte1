@@ -1,6 +1,6 @@
 # T-Ssera Construcciones · ERP de obras
 
-ERP multi-empresa para constructoras con enfoque ecológico: avance físico, presupuesto ejercido, certificaciones ambientales (LEED, EDGE) e impacto medido (CO₂, energía, agua) de todas las obras en un panel. Incluye API (Express + MongoDB Atlas), app Android (React Native) y web (React + Vite), sincronizadas en tiempo real.
+ERP multi-empresa para constructoras con enfoque ecológico: propuestas, avance físico, presupuesto ejercido, certificaciones ambientales (LEED, EDGE) e impacto (CO₂, energía, agua) de todas las obras en un panel. Incluye API (Express + MongoDB Atlas), app Android (React Native) y web (React + Vite; por ahora solo el acceso).
 
 ## Estructura del repositorio
 
@@ -8,12 +8,12 @@ Monorepo con workspaces de pnpm.
 
 | Carpeta | Contenido |
 | --- | --- |
-| `apps/api` | API REST + canal WebSocket (Node.js + Express). Módulos `identity` y `obras` en `src/modules`. |
+| `apps/api` | API REST + canal WebSocket (Node.js + Express). Módulos `identity`, `catalogs`, `inventory` y `construction` en `src/modules`. |
 | `apps/mobile` | App Android (React Native 0.73). Proyecto nativo en `apps/mobile/android`. |
 | `apps/web` | Panel web (React + Vite), publicado en Cloudflare Pages. |
-| `packages/domain` | Esquemas (Zod), tipos y reglas de negocio compartidas: estados, transiciones, resumen del dashboard, permisos, dinero. |
-| `packages/api-client` | Cliente HTTP con sesión y renovación de tokens, canal en tiempo real y `ObrasStore`, compartido por app y web. |
-| `packages/ui` | Componentes de React Native compartidos. |
+| `packages/domain` | Esquemas (Zod), tipos y reglas de negocio compartidas: estados, transiciones, permisos por rol, dinero. |
+| `packages/api-client` | Cliente HTTP con sesión y renovación de tokens y canal en tiempo real, compartido por app y web. |
+| `packages/ui` | Tokens del sistema visual (colores, tipografías, radios) y componentes de React Native compartidos. |
 | `packages/config` | Carga y validación (Zod) de las variables de entorno. |
 | `infra` | `Dockerfile` de la API, `docker-compose.yml` (API + Redis) y el Worker de Cloudflare que mantiene despierta la API. |
 | `docs/adr` | Decisiones de arquitectura. |
@@ -89,21 +89,18 @@ Todas las rutas salvo `/health` y las públicas de `/auth/*` exigen `Authorizati
 
 La empresa y las primeras cuentas (un `admin` y un `user`) se crean con el seed, que toma todo de las variables `SEED_*` de `.env.local` (ver `.env.example`; las contraseñas, de 15 a 128 caracteres, nunca van como argumento). Se crean en la base a la que apunte `.env.local` y es idempotente: lo que ya existe no se modifica.
 
+El seed carga además datos de demostración de construcción, a nombre del administrador: cinco obras (Torre Cedro retrasada, Plaza Origen con el 96% del presupuesto ejercido, Oficinas Raíz certificando con requisitos pendientes, Residencial Alameda y Casa Manantial) y dos propuestas en revisión, con sus movimientos de presupuesto. Solo lo hace si el tenant no tiene ninguna obra ni propuesta. **Si `.env.local` apunta a producción, esos datos de demostración quedan en producción.**
+
 ```powershell
 pnpm --filter @erp/api seed
-```
-
-Para tener datos con los que probar, carga las 6 obras de ejemplo del prototipo en el tenant (solo si está vacío):
-
-```powershell
-pnpm --filter @erp/api seed-demo
 ```
 
 ### Convenciones de la API
 
 - Las respuestas exitosas tienen la forma `{ success: true, data, timestamp }`. Los listados devuelven en `data` el objeto `{ items, page, pageSize, total }` y aceptan `?page=` (desde 1), `?pageSize=` (máximo 100) y, en catálogos, `?q=` como búsqueda de texto literal.
 - Cantidades, costos, precios y tasas viajan como **texto decimal** (`"12.50"`), nunca como número; se guardan como `Decimal128`.
-- Cada ruta exige un permiso `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`). Con los roles actuales, `viewer` solo lee, `user` lee y crea, `manager` también modifica y aprueba (acción `approve`, hoy solo en obras) y `admin` puede todo. Algunas rutas son solo para `admin`.
+- Cada ruta exige un permiso. En catálogos, inventario y usuarios es `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`): `viewer` solo lee, `user` lee y crea, `manager` también modifica y `admin` puede todo; algunas rutas son solo para `admin`. En construcción es `modulo.recurso:accion` (ver [Roles y permisos](#roles-y-permisos)).
+- Los errores tienen la forma `{ success: false, error: { code, message, details? }, timestamp, path }`. Los de validación (Zod) llevan `code: "VALIDATION_ERROR"` y el detalle por campo en `details`.
 
 ### Catálogos
 
@@ -143,36 +140,57 @@ La reconciliación también se puede ejecutar desde la terminal, contra la base 
 pnpm --filter @erp/api reconcile-inventory -- --tenant <id>
 ```
 
-### Roles
+### Roles y permisos
 
-| Rol | Puede |
-| --- | --- |
-| `admin` / `superadmin` | Todo, incluido gestionar usuarios y eliminar obras. |
-| `manager` (gerente de proyecto) | Ver, crear y editar obras; aprobar o solicitar cambios. |
-| `user` (residente de obra) | Ver obras, crear propuestas y registrar mediciones ambientales. |
-| `viewer` | Solo consulta. |
+Los módulos de construcción e identidad usan permisos `modulo.recurso:accion` con un mapa explícito por rol (`ROLE_PERMISSIONS` en `packages/domain`). Hay dos perfiles; `superadmin` hereda el de `admin`, y `manager` y `viewer` el de `user`.
 
-Crea usuarios con `POST /users` (como admin) indicando `role`.
+| Permiso | user | admin |
+| --- | --- | --- |
+| `construction.dashboard:read`, `construction.projects:read`, `construction.proposals:read` | sí | sí |
+| `construction.projects:update`, `:archive`, `:delete`, `:restore` | no | sí |
+| `construction.proposals:create`, `:update`, `:submit`, `:approve`, `:reject`, `:delete`, `:restore` | no | sí |
+| `construction.budget:read_amounts`, `construction.budget:adjust` | no | sí |
+| `construction.certifications:update` | no | sí |
+| `identity.profile:update` | sí | sí |
+| `identity.users:manage` | no | sí |
 
-### Obras
+Catálogos e inventario conservan sus permisos por acción (arriba). `GET /me` entrega ambas listas juntas y los clientes deciden con `can('permiso')`, nunca por el nombre del rol. Crea usuarios con `POST /users` (como admin) indicando `role`.
 
-| Ruta | Descripción |
-| --- | --- |
-| `GET /obras?estado=&q=` | Obras del tenant; filtro por estado derivado y búsqueda por nombre, cliente o ubicación. |
-| `GET /obras/resumen` | KPIs del dashboard: activas, retrasadas, avance promedio, CO₂ medido, presupuesto ejercido, certificaciones en curso. |
-| `GET /obras/:id` | Ficha completa. |
-| `POST /obras` | Crea una obra en etapa `propuesta`. |
-| `PATCH /obras/:id` | Actualiza campos (fases y materiales se reemplazan completos). |
-| `POST /obras/:id/aprobar` | Propuesta → ejecución → certificación (o completada si no tiene) → completada. Cerrar la ejecución exige todas las fases al 100%. |
-| `POST /obras/:id/solicitar-cambios` | `{ comentario }`. En propuesta queda registrada; en certificación regresa a ejecución. |
-| `POST /obras/:id/mediciones` | Registra CO₂ evitado, energía y agua medidos; su suma es el impacto real de la obra. |
-| `DELETE /obras/:id` | Borrado lógico (solo admin). |
+### Construcción
 
-El **estado** que ven los usuarios se calcula al leer: una obra en ejecución pasa a `retrasada` cuando una fase venció sin terminarse o va 20 puntos por debajo del avance esperado. Toda acción queda en la colección `audit_log`.
+Módulo vertical en `/construction`: propuestas, obras, presupuesto y certificaciones. Detalle de las decisiones en [ADR 0004](docs/adr/0004-modulo-construccion.md).
+
+| Ruta | Permiso | Descripción |
+| --- | --- | --- |
+| `GET /construction/dashboard` | `dashboard:read` | KPIs (obras activas, avance promedio, CO₂ evitado, % de presupuesto ejercido), obras en curso y certificaciones en proceso. Quien puede actuar recibe además `attention` ("Requiere tu atención"). |
+| `GET /construction/projects` | `projects:read` | Paginado. Filtros `status`, `q` (nombre o cliente) y `archived=true` (exige `projects:archive`). |
+| `GET /construction/projects/:id` | `projects:read` | Detalle con fases, requisitos de certificación, impacto, `delayDays`, resumen de presupuesto y `deletable`. |
+| `PATCH /construction/projects/:id` | `projects:update` | Datos generales, fases (la lista reemplaza a la actual) y `progressPct`. |
+| `POST /construction/projects/:id/transition` | `projects:update` | `{ to }`. Ciclo `planning` → `in_progress` → `certifying` → `completed`; cualquier otro salto responde 409 `INVALID_TRANSITION`. |
+| `POST /construction/projects/:id/archive` y `/unarchive` | `projects:archive` | Archivar saca la obra de los listados activos y de los KPIs; no borra nada. |
+| `DELETE /construction/projects/:id` | `projects:delete` | Borrado lógico. 409 `PROJECT_HAS_MOVEMENTS` si el presupuesto tiene algo más que el movimiento inicial. |
+| `GET /construction/projects/:id/budget-movements` | `budget:read_amounts` | Historial de movimientos, paginado. |
+| `POST /construction/projects/:id/budget-movements` | `budget:adjust` | `{ amount, reason, reversesMovementId? }`. Siempre crea un `adjustment`. |
+| `PATCH /construction/projects/:id/certification/requirements/:code` | `certifications:update` | `{ status, note }`. |
+| `GET /construction/projects/:id/activity` | `projects:read` | Entradas de `auditLog` de la obra, paginadas. |
+| `GET /construction/proposals` | `proposals:read` | Paginado. Filtro `status`. |
+| `GET /construction/proposals/:id` | `proposals:read` | Detalle. |
+| `POST /construction/proposals/:id/approve` | `proposals:approve` | Aprueba y, en la misma transacción, crea la obra en `planning` y su movimiento `initial_budget`. La respuesta trae `projectId`. |
+| `POST /construction/proposals/:id/reject` | `proposals:reject` | `{ reason }` obligatorio. |
+
+Los permisos de la tabla llevan el prefijo `construction.`.
+
+- **Dinero**: en JSON es un string con dos decimales (`"38600000.00"`), `Decimal128` en MongoDB y nunca `number`. El formato visual (`$38,600,000.00`) lo da `formatMoney` de `packages/domain`.
+- **Montos según permiso**: sin `construction.budget:read_amounts` ninguna respuesta lleva montos (ni `estimatedBudget`, ni `currentBudget`, `spent`, `available`), solo porcentajes. Lo decide la API, no la interfaz.
+- **Presupuesto derivado**: la obra no guarda montos. `currentBudget` (inicial + ajustes), `spent`, `available` y `spentPct` salen de una agregación sobre `budgetMovements`, que es inmutable. Para corregir un ajuste se registra otro con el monto contrario y `reversesMovementId`; solo una vez (409 `ALREADY_REVERSED`).
+- **Retraso**: no es un estado. `delayDays` son los días desde el fin planeado de la fase en curso (la primera `in_progress`), si ya pasó.
+- **Folios** por tenant con contador atómico (`counters`): `PRO-000001`, `OBR-000001`, `MOV-000001`.
+- **Bitácora**: cada acción escribe en `auditLog` (`actorId`, `action`, `entityType`, `entityId`, `summary`, `at`). Los resúmenes nunca incluyen montos.
+- En este bloque la API no crea ni edita propuestas (llega con el formulario del Bloque 3) ni registra gastos: los carga el seed.
 
 ### Tiempo real
 
-La web y la app abren `wss://<api>/ws` y envían `{ "type": "auth", "token": "<accessToken>" }`. Cada cambio en una obra se difunde a las sesiones del mismo tenant, así lo que se aprueba en la web aparece al instante en la app y al revés. El canal se reconecta solo y, al reconectar, recarga la lista por si hubo cambios mientras estaba caído.
+La app abre `wss://<api>/ws` y envía `{ "type": "auth", "token": "<accessToken>" }`. Cada cambio en una obra o propuesta difunde a las sesiones del mismo tenant un aviso sin datos (`{ type: 'construction.changed', entity, id }`) y la app vuelve a consultar la API, que responde según los permisos de cada usuario. El canal se reconecta solo y, al reconectar, recarga por si hubo cambios mientras estaba caído.
 
 ## Ejecutar la app móvil
 
@@ -226,9 +244,9 @@ Con la API corriendo (`pnpm dev`):
 pnpm --filter @erp/web dev
 ```
 
-Abre `http://localhost:5173`. Para apuntar a otra API, define `VITE_API_URL` (por ejemplo en `apps/web/.env.local`). Sin ella, usa `http://localhost:3000` en desarrollo y la API de Render en el build de producción.
+Abre `http://localhost:5173`. La web cubre el acceso (iniciar sesión, recuperar contraseña y activar la cuenta); las pantallas de construcción están por ahora solo en la app móvil. Para apuntar a otra API, define `VITE_API_URL` (por ejemplo en `apps/web/.env.local`). Sin ella, usa `http://localhost:3000` en desarrollo y la API de Render en el build de producción.
 
-Para ver la sincronización, abre la web y la app con usuarios del mismo tenant: aprobar una obra, mover el avance de una fase o registrar una medición en una se refleja en la otra sin recargar.
+Para ver la sincronización, abre la app en dos dispositivos con usuarios del mismo tenant: aprobar una propuesta o registrar un ajuste en uno se refleja en el otro sin recargar.
 
 ## Desarrollo con Docker
 
@@ -272,4 +290,4 @@ También puedes usar `pnpm.cmd` o la terminal Command Prompt.
 
 ## Decisiones de arquitectura
 
-Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md).
+Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md); las de acceso, en [docs/adr/0003-acceso-y-consultas-sin-tenant.md](docs/adr/0003-acceso-y-consultas-sin-tenant.md); y las del módulo de construcción, en [docs/adr/0004-modulo-construccion.md](docs/adr/0004-modulo-construccion.md).

@@ -13,7 +13,6 @@ import { identityRoutes } from './modules/identity/identity.routes';
 import type { EmailSender } from './platform/integrations/email';
 import { catalogsRoutes } from './modules/catalogs/catalogs.routes';
 import { inventoryRoutes } from './modules/inventory/inventory.routes';
-import { obrasRoutes } from './modules/obras/obras.routes';
 import { constructionRoutes } from './modules/construction/construction.routes';
 
 function corsOrigin(config: ServerConfig): cors.CorsOptions['origin'] {
@@ -55,8 +54,6 @@ export function createApp(
           'GET /health', 'POST /auth/login', 'POST /auth/refresh', 'POST /auth/logout',
           'POST /auth/password/forgot', 'POST /auth/password/reset', 'POST /auth/invitations/accept', 'GET /me',
           'GET /users', 'POST /users',
-          'GET /obras', 'GET /obras/resumen', 'GET /obras/:id', 'POST /obras', 'PATCH /obras/:id', 'DELETE /obras/:id',
-          'POST /obras/:id/aprobar', 'POST /obras/:id/solicitar-cambios', 'POST /obras/:id/mediciones',
           'GET /construction/dashboard', 'GET /construction/projects', 'GET /construction/projects/:id',
           'PATCH /construction/projects/:id', 'POST /construction/projects/:id/transition',
           'POST /construction/projects/:id/archive', 'POST /construction/projects/:id/unarchive', 'DELETE /construction/projects/:id',
@@ -92,7 +89,6 @@ export function createApp(
   app.use('/users', identity.users);
   app.use('/catalogs', catalogsRoutes());
   app.use('/inventory', inventoryRoutes());
-  app.use('/obras', obrasRoutes(publish));
   app.use('/construction', constructionRoutes(publish));
 
   app.use(notFoundHandler);

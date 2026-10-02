@@ -2,7 +2,7 @@
 
 ## Estado
 
-Aceptada para la fase 0.
+Aceptada para la fase 0. Lo relativo al módulo `obras`, su bitácora `audit_log` y `ObrasStore` quedó sustituido por el [ADR 0004](0004-modulo-construccion.md).
 
 ## Decisiones
 

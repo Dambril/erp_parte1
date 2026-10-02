@@ -1,14 +1,9 @@
 import { useState } from 'react';
 import { ROLE_LABEL } from '@erp/domain';
-import { Conexion } from './components';
-import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NuevaContrasenaPage, type NuevaContrasenaModo } from './pages/NuevaContrasenaPage';
-import { NuevaObraPage } from './pages/NuevaObraPage';
-import { ObraDetailPage } from './pages/ObraDetailPage';
-import { ObrasPage } from './pages/ObrasPage';
 import { RecuperarPage } from './pages/RecuperarPage';
-import { useAuth, useObras, useRuta } from './state';
+import { useAuth, useRuta } from './state';
 
 const RUTAS_PUBLICAS: Record<string, NuevaContrasenaModo> = { '/restablecer': 'restablecer', '/activar': 'activar' };
 
@@ -22,8 +17,7 @@ function enlaceDeCorreo(): { modo: NuevaContrasenaModo; token: string | null } |
 }
 
 export function App() {
-  const { status, user, company, can, logout, retry, setAviso } = useAuth();
-  const { conexion } = useObras();
+  const { status, user, company, logout, retry, setAviso } = useAuth();
   const ruta = useRuta();
   const [enlace, setEnlace] = useState(enlaceDeCorreo);
 
@@ -56,34 +50,18 @@ export function App() {
     return ruta === '/recuperar' ? <RecuperarPage /> : <LoginPage />;
   }
 
-  const detalle = ruta.match(/^\/obras\/([^/]+)$/);
-  let pagina;
-  if (ruta === '/obras/nueva' && can('obras.create')) pagina = <NuevaObraPage />;
-  else if (detalle) pagina = <ObraDetailPage id={decodeURIComponent(detalle[1])} />;
-  else if (ruta === '/obras') pagina = <ObrasPage />;
-  else pagina = <DashboardPage />;
-
-  const activo = (prefijo: string) => (prefijo === '/' ? ruta === '/' : ruta.startsWith(prefijo)) ? 'active' : '';
-
+  // El módulo de construcción (obras, propuestas, presupuesto) vive por ahora solo en la app móvil.
   return (
-    <div className="layout">
-      <aside className="sidebar">
-        <img src="/logo.png" alt="T-Ssera Construcciones" className="sidebar-logo" />
-        <nav>
-          <a href="#/" className={activo('/')}>Dashboard</a>
-          <a href="#/obras" className={ruta === '/obras' || (detalle && ruta !== '/obras/nueva') ? 'active' : ''}>Obras</a>
-          {can('obras.create') ? <a href="#/obras/nueva" className={activo('/obras/nueva')}>Nueva obra</a> : null}
-        </nav>
-        <div className="sidebar-footer">
-          <Conexion estado={conexion} />
-          <div className="user">
-            <strong>{user.name}</strong>
-            <span>{ROLE_LABEL[user.role]}{company ? ` · ${company.name}` : ''}</span>
-          </div>
-          <button className="btn btn-secondary" onClick={() => logout()}>Cerrar sesión</button>
-        </div>
-      </aside>
-      <main className="main">{pagina}</main>
+    <div className="center-screen">
+      <div className="login-form">
+        <h1>Hola, {user.name}</h1>
+        <p className="muted">{ROLE_LABEL[user.role]}{company ? ` · ${company.name}` : ''}</p>
+        <p>
+          Las obras, las propuestas y el presupuesto están disponibles en la app móvil de T-Ssera.
+          La versión web de estas pantallas está en migración.
+        </p>
+        <button className="btn btn-secondary" onClick={() => logout()}>Cerrar sesión</button>
+      </div>
     </div>
   );
 }

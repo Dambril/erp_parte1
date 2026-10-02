@@ -29,7 +29,6 @@ const CRUD = ['read', 'create', 'update', 'delete'] as const;
  */
 export const PERMISSION_CATALOG = {
   users: ['read', 'create'],
-  obras: ['read', 'create', 'update', 'delete', 'approve'],
   'catalogs.unit': CRUD,
   'catalogs.tax': CRUD,
   'catalogs.currency': CRUD,

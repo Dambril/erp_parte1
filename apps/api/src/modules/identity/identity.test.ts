@@ -356,8 +356,10 @@ describe('GET /me', () => {
   it('gives a viewer only read permissions and no admin modules', async () => {
     const { accessToken } = await login('viewer-a@example.com');
     const { permissions } = (await request(app).get('/me').set(bearer(accessToken))).body.data as { permissions: string[] };
-    expect(permissions).toContain('obras.read');
-    expect(permissions).not.toContain('obras.create');
+    expect(permissions).toContain('catalogs.product.read');
+    expect(permissions).not.toContain('catalogs.product.create');
+    expect(permissions).toContain('construction.projects:read');
+    expect(permissions).not.toContain('construction.budget:read_amounts');
     expect(permissions).not.toContain('users.read');
   });
 
