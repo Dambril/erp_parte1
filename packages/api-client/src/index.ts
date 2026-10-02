@@ -1,5 +1,8 @@
 import type {
-  AcceptInvitationRequest, AuthSession, CatalogResource, CatalogResources, CreateLotRequest, CreateMovementRequest, CreateObraInput,
+  AcceptInvitationRequest, ActivityEntry, AuthSession, BudgetMovement, CatalogResource, CatalogResources, CertificationRequirement,
+  CreateBudgetMovementRequest, CreateLotRequest, CreateMovementRequest, CreateObraInput, Dashboard, PageQuery, ProjectDetail,
+  ProjectDetailWithAmounts, ProjectListItem, ProjectsQuery, ProjectStatus, ProposalDetail, ProposalDetailWithAmounts, ProposalsQuery,
+  ProposalSummary, ProposalSummaryWithAmounts, UpdateProjectRequest, UpdateRequirementRequest,
   CreateTransferRequest, InventoryMovement, InventorySettings, Kardex, KardexQuery, Lot, MedicionInput, MeResponse, Obra, ObrasQuery,
   Paginated, Permission, ReconciliationReport, ResetPasswordRequest, ResumenObras, StockLevel, StockQuery, TransferResult,
   UpdateObraInput,
@@ -40,7 +43,7 @@ export function memorySessionStore(): SessionStore {
   };
 }
 
-/** `can('obras.approve')` a partir de la lista de permisos que entrega `/me`. */
+/** `can('construction.proposals:approve')` a partir de la lista de permisos que entrega `/me`. */
 export function permissionChecker(permissions: readonly Permission[]): (permission: Permission) => boolean {
   const granted = new Set(permissions);
   return (permission) => granted.has(permission);
@@ -196,6 +199,42 @@ export class ApiClient {
     solicitarCambios: (id: string, comentario: string) =>
       this.send<Obra>('POST', `/obras/${encodeURIComponent(id)}/solicitar-cambios`, { comentario }),
     registrarMedicion: (id: string, input: MedicionInput) => this.send<Obra>('POST', `/obras/${encodeURIComponent(id)}/mediciones`, input),
+  };
+
+  // ── Construcción ────────────────────────────────────────────────
+  // Las respuestas traen montos solo si el usuario tiene `construction.budget:read_amounts` (lo decide la API).
+
+  readonly construction = {
+    dashboard: () => this.send<Dashboard>('GET', '/construction/dashboard'),
+    projects: {
+      list: (query?: ProjectsQuery) => this.send<Paginated<ProjectListItem>>('GET', `/construction/projects${queryString(query)}`),
+      get: (id: string) => this.send<ProjectDetail | ProjectDetailWithAmounts>('GET', `/construction/projects/${id}`),
+      update: (id: string, changes: UpdateProjectRequest) =>
+        this.send<ProjectDetail | ProjectDetailWithAmounts>('PATCH', `/construction/projects/${id}`, changes),
+      transition: (id: string, to: ProjectStatus) =>
+        this.send<ProjectDetail | ProjectDetailWithAmounts>('POST', `/construction/projects/${id}/transition`, { to }),
+      archive: (id: string) => this.send<ProjectDetail | ProjectDetailWithAmounts>('POST', `/construction/projects/${id}/archive`),
+      unarchive: (id: string) => this.send<ProjectDetail | ProjectDetailWithAmounts>('POST', `/construction/projects/${id}/unarchive`),
+      remove: (id: string) => this.send<void>('DELETE', `/construction/projects/${id}`),
+      activity: (id: string, query?: PageQuery) =>
+        this.send<Paginated<ActivityEntry>>('GET', `/construction/projects/${id}/activity${queryString(query)}`),
+      movements: (id: string, query?: PageQuery) =>
+        this.send<Paginated<BudgetMovement>>('GET', `/construction/projects/${id}/budget-movements${queryString(query)}`),
+      /** Registra un ajuste; con `reversesMovementId` es la corrección de otro (monto contrario). */
+      adjust: (id: string, input: CreateBudgetMovementRequest) =>
+        this.send<BudgetMovement>('POST', `/construction/projects/${id}/budget-movements`, input),
+      updateRequirement: (id: string, code: string, input: UpdateRequirementRequest) =>
+        this.send<CertificationRequirement>('PATCH', `/construction/projects/${id}/certification/requirements/${encodeURIComponent(code)}`, input),
+    },
+    proposals: {
+      list: (query?: ProposalsQuery) =>
+        this.send<Paginated<ProposalSummary | ProposalSummaryWithAmounts>>('GET', `/construction/proposals${queryString(query)}`),
+      get: (id: string) => this.send<ProposalDetail | ProposalDetailWithAmounts>('GET', `/construction/proposals/${id}`),
+      /** Al aprobar se crea la obra: su id viene en `projectId`. */
+      approve: (id: string) => this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', `/construction/proposals/${id}/approve`),
+      reject: (id: string, reason: string) =>
+        this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', `/construction/proposals/${id}/reject`, { reason }),
+    },
   };
 
   // ── Catálogos ───────────────────────────────────────────────────

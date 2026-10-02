@@ -21,6 +21,10 @@ const MENSAJES: Record<string, string> = {
   UNAUTHENTICATED: 'Tu sesión expiró. Vuelve a iniciar sesión.',
   INVALID_TOKEN: 'Tu sesión expiró. Vuelve a iniciar sesión.',
   OBRA_NOT_FOUND: 'La obra ya no existe.',
+  PROJECT_NOT_FOUND: 'La obra ya no existe.',
+  PROPOSAL_NOT_FOUND: 'La propuesta ya no existe.',
+  MOVEMENT_NOT_FOUND: 'El movimiento a corregir ya no existe.',
+  REQUIREMENT_NOT_FOUND: 'La obra no tiene ese requisito de certificación.',
   OBRA_MODIFICADA: 'Alguien más modificó la obra al mismo tiempo. Intenta de nuevo.',
 };
 

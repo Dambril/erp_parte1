@@ -304,6 +304,15 @@ interface ProjectDetailBase extends ProjectListItem {
 export interface ProjectDetail extends ProjectDetailBase { budget: BudgetSummary }
 export interface ProjectDetailWithAmounts extends ProjectDetailBase { budget: BudgetSummaryWithAmounts }
 
+/** El cliente pinta montos solo si la API los envió; nunca decide por el rol. */
+export function budgetHasAmounts(budget: BudgetSummary): budget is BudgetSummaryWithAmounts {
+  return 'currentBudget' in budget;
+}
+
+export function proposalHasAmounts<T extends ProposalSummary>(proposal: T): proposal is T & { estimatedBudget: MoneyString } {
+  return 'estimatedBudget' in proposal;
+}
+
 export interface BudgetMovement {
   id: string;
   folio: string;
