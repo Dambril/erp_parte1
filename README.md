@@ -43,14 +43,15 @@ Variables (validadas al arrancar en `packages/config`):
 | --- | --- | --- |
 | `MONGODB_URI` | Sí | URI `mongodb+srv://...` de Atlas. |
 | `MONGODB_DB_NAME` | No | Nombre de la base; si falta, se usa el de la URI (o `test`). |
-| `JWT_SECRET`, `JWT_REFRESH_SECRET` | Sí | Mínimo 8 caracteres. Usa valores distintos y largos en producción. |
-| `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Por defecto `15m` y `7d`. |
+| `JWT_SECRET` | Sí | Mínimo 8 caracteres. Usa un valor largo y aleatorio en producción. |
+| `JWT_EXPIRES_IN` | No | Vida del access token. Por defecto `15m`. El refresh token dura 30 días. |
 | `DEFAULT_TENANT_ID` | Sí | Tenant por defecto en desarrollo. |
 | `PORT` | No | Por defecto `3000`. |
 | `REDIS_URL` | No | Solo hará falta cuando existan jobs con BullMQ. |
 | `RESEND_API_KEY` | No | API key de Resend. Sin ella los correos no se envían (solo log). |
 | `EMAIL_FROM` | No | Remitente. Por defecto `ERP <onboarding@resend.dev>`, que solo entrega al correo dueño de la cuenta de Resend. |
-| `PASSWORD_RESET_URL` | No | Pantalla de restablecer contraseña; el correo añade `?token=...`. Sin ella, el correo trae el código. |
+| `APP_WEB_URL` | En producción | URL pública de la web; los correos enlazan a `/restablecer?token=...` y `/activar?token=...`. Fuera de producción, `http://localhost:5173`. |
+| `SEED_*` | Solo para `seed` | Empresa y cuentas iniciales (ver más abajo). |
 | `CORS_ORIGINS` | No | Orígenes web permitidos, separados por comas. Si falta: cualquiera en desarrollo, ninguno en producción. Las apps nativas no lo necesitan. |
 | `NODE_ENV` | No | `development`, `test` o `production`. |
 
@@ -72,28 +73,25 @@ pnpm dev
 
 ### Autenticación
 
-Todas las rutas salvo `/health` y `/auth/*` exigen `Authorization: Bearer <accessToken>`. El tenant se toma del token.
+Todas las rutas salvo `/health` y las públicas de `/auth/*` exigen `Authorization: Bearer <accessToken>`. El tenant se toma del token. Detalle de sesiones, bloqueo y consultas sin tenant en [ADR 0003](docs/adr/0003-acceso-y-consultas-sin-tenant.md).
 
 | Ruta | Descripción |
 | --- | --- |
-| `POST /auth/login` | `{ email, password }` → `accessToken`, `refreshToken` y el usuario. Máximo 10 intentos por IP cada 15 minutos. |
-| `POST /auth/refresh` | `{ refreshToken }` → par de tokens nuevo. El anterior queda invalidado; reutilizarlo cierra todas las sesiones. |
-| `POST /auth/logout` | `{ refreshToken }` → revoca la sesión. |
-| `POST /auth/forgot-password` | `{ email }` → 202 siempre (no revela si el email existe); envía el correo con el token (vence en 60 min). |
-| `POST /auth/reset-password` | `{ token, password }` → 204. Token de un solo uso; cierra todas las sesiones del usuario. |
-| `GET /auth/me` | Usuario autenticado. |
+| `POST /auth/login` | `{ email, password }` → `accessToken` (15 min), `refreshToken` (30 días) y el usuario. 401 `INVALID_CREDENTIALS` igual para correo inexistente, contraseña incorrecta o cuenta no activa. Tras 5 fallos seguidos, 429 `TOO_MANY_ATTEMPTS` durante 5 minutos. Además, máximo 10 intentos por IP cada 15 minutos. |
+| `POST /auth/refresh` | `{ refreshToken }` → par de tokens nuevo. El anterior queda revocado; reutilizarlo cierra todas las sesiones. |
+| `POST /auth/logout` | Autenticada. Revoca la sesión del access token. 204. |
+| `POST /auth/password/forgot` | `{ email }` → 202 siempre con el mismo cuerpo; si la cuenta está activa envía el enlace (vence en 60 min). |
+| `POST /auth/password/reset` | `{ token, password }` → 204. Token de un solo uso; cierra todas las sesiones del usuario. No inicia sesión. 400 `INVALID_TOKEN` si no sirve. |
+| `POST /auth/invitations/accept` | `{ token, password }` → 204 y la cuenta queda activa. |
+| `GET /me` | Usuario, empresa (`company`), rol y lista de permisos (`permissions`). |
 | `GET /users` | Usuarios del tenant (solo `admin`). |
 | `POST /users` | Crea un usuario en el tenant: `{ email, name, password, role? }` (solo `admin`). |
 
-El primer administrador se crea desde la terminal. La contraseña va en una variable de entorno para que no quede en el historial, y el usuario se crea en la base a la que apunte `.env.local`:
+La empresa y las primeras cuentas (un `admin` y un `user`) se crean con el seed, que toma todo de las variables `SEED_*` de `.env.local` (ver `.env.example`; las contraseñas, de 15 a 128 caracteres, nunca van como argumento). Se crean en la base a la que apunte `.env.local` y es idempotente: lo que ya existe no se modifica.
 
 ```powershell
-$env:ADMIN_PASSWORD = 'una-contraseña-larga'
-pnpm --filter @erp/api create-admin -- --email admin@empresa.com --name "Administrador"
-Remove-Item Env:ADMIN_PASSWORD
+pnpm --filter @erp/api seed
 ```
-
-Opcionales: `--tenant <id>` (por defecto `DEFAULT_TENANT_ID`) y `--role superadmin`.
 
 Para tener datos con los que probar, carga las 6 obras de ejemplo del prototipo en el tenant (solo si está vacío):
 

@@ -17,8 +17,8 @@ Aceptada para la fase 0.
 - Zod valida configuración y será la validación de entrada de cada endpoint.
 - Jest y Supertest cubren la API; BullMQ/Redis quedan preparados para fases posteriores.
 - El dinero se representa como `Decimal128` en persistencia y como cadena decimal en los tipos compartidos, nunca como `number`.
-- Autenticación con JWT: access token corto (`JWT_EXPIRES_IN`) y refresh token rotatorio (`JWT_REFRESH_EXPIRES_IN`) cuyo `jti` se guarda en `refresh_tokens`; reutilizar un refresh token ya rotado revoca todas las sesiones del usuario. Contraseñas con `scrypt` de Node (sin dependencias nativas).
-- RBAC por rol: la tabla de permisos vive en `packages/domain` (`roleCan`) para que los clientes oculten lo que el rol no puede hacer, y la API la aplica con `requirePermission(módulo, acción)`. La acción `approve` (aprobar o solicitar cambios) corresponde a gerentes y administradores.
+- Autenticación con JWT: access token corto (`JWT_EXPIRES_IN`) y refresh token opaco y rotatorio guardado como hash en `sessions` (detalle en ADR 0003). Contraseñas con `scrypt` de Node (sin dependencias nativas).
+- RBAC por rol: el mapa de permisos vive en `packages/domain` (`roleHasPermission`, `permissionsForRole`) para que los clientes oculten lo que el rol no puede hacer (`/me` entrega la lista), y la API lo aplica con `requirePermission(módulo, acción)`. La acción `approve` (aprobar o solicitar cambios) corresponde a gerentes y administradores.
 - Auditoría: cada acción sobre una obra se registra en `audit_log` (actor, acción, entidad, detalles, fecha) desde el servicio, que es quien conoce la entidad afectada.
 - Obras: la etapa (`propuesta`, `ejecucion`, `certificacion`, `completada`) se persiste y solo la cambian las decisiones; el estado visible (incluido `retrasada`) se deriva del cronograma al leer. El impacto ambiental real es la suma de mediciones registradas, separado del estimado.
 

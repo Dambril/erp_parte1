@@ -28,7 +28,8 @@ La forma recomendada es el Blueprint [`render.yaml`](../render.yaml): en Render,
    | `MONGODB_URI` | La URI de Atlas. |
    | `MONGODB_DB_NAME` | Nombre de la base (el mismo que uses en `.env.local`). |
    | `JWT_SECRET` | Secreto largo y aleatorio. |
-   | `JWT_REFRESH_SECRET` | Otro secreto largo, distinto del anterior. |
+   | `APP_WEB_URL` | URL pública de la web (Cloudflare Pages); los correos enlazan a ella. |
+   | `RESEND_API_KEY` | API key de Resend, para los correos de recuperación. |
    | `DEFAULT_TENANT_ID` | El tenant por defecto. |
    | `CORS_ORIGINS` | Opcional. URLs de la web que consumirá la API, separadas por comas. |
 
@@ -52,7 +53,7 @@ Los logs de cada ejecución se ven en Cloudflare → Workers & Pages → `erp-ap
 
 Render da 750 horas gratuitas al mes por cuenta: alcanzan para un servicio encendido todo el mes, pero no para dos.
 
-Para poder iniciar sesión hace falta un primer administrador: créalo con `create-admin` (ver [README](../README.md#autenticación)) desde tu equipo con `.env.local` apuntando a la misma base que Render. Con la misma configuración, `pnpm --filter @erp/api seed-demo` carga obras de ejemplo si quieres enseñar el sistema con datos.
+Para poder iniciar sesión hace falta la empresa y sus primeras cuentas: créalas con `pnpm --filter @erp/api seed` (ver [README](../README.md#autenticación)) desde tu equipo con `.env.local` apuntando a la misma base que Render. Con la misma configuración, `pnpm --filter @erp/api seed-demo` carga obras de ejemplo si quieres enseñar el sistema con datos.
 
 La API no necesita nada extra para el tiempo real: Render admite WebSocket en el mismo servicio (`wss://<servicio>.onrender.com/ws`). Los sockets viven en memoria, así que el servicio debe tener **una sola instancia**; para escalar a varias habría que añadir un pub/sub (Redis).
 
@@ -122,7 +123,7 @@ La URL de la API está en `apps/mobile/src/lib/apiClient.ts`: los builds release
 - [ ] Cluster de Atlas creado, usuario y acceso de red configurados.
 - [ ] Variables de entorno cargadas en Render, con secretos JWT nuevos.
 - [ ] `/health` en Render responde `ok` y `connected`.
-- [ ] Primer administrador creado con `create-admin` y login probado.
+- [ ] Empresa y cuentas iniciales creadas con `seed` y login probado.
 - [ ] Usuarios con sus roles creados (`POST /users`).
 - [ ] Web publicada en Cloudflare Pages y su URL en `CORS_ORIGINS` de Render.
 - [ ] Worker keepalive desplegado.

@@ -76,7 +76,7 @@ La fase 1B agrega los catálogos (unidades, impuestos, monedas, categorías, pro
 
 ### Índices
 
-- Todos empiezan por `tenantId` y los crea `ensureIndexes` (`apps/api/src/indexes.ts`) en cada arranque, en `create-admin` y en las pruebas. Nunca se crean a mano en Atlas.
+- Todos empiezan por `tenantId` y los crea `ensureIndexes` (`apps/api/src/indexes.ts`) en cada arranque, en los scripts (`seed`) y en las pruebas. Nunca se crean a mano en Atlas.
 
 ## Consecuencias
 
