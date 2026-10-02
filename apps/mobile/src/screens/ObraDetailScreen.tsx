@@ -4,7 +4,7 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {mensajeError} from '@erp/api-client';
 import {
   CERTIFICACION_ESTADO_LABEL, etiquetaAprobar, faseRetrasada, fechaLocalISO, formatearFecha, formatearMonto,
-  formatearNumero, hoyISO, porcentajeMonto, roleCan, type Obra,
+  formatearNumero, hoyISO, porcentajeMonto, type Obra,
 } from '@erp/domain';
 import {colors} from '../theme/colors';
 import {typography} from '../theme/typography';
@@ -20,7 +20,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ObraDetail'>;
 type Panel = 'ninguno' | 'cambios' | 'medicion';
 
 export function ObraDetailScreen({route}: Props): React.ReactElement {
-  const {user} = useAuth();
+  const {can} = useAuth();
   const {obras, store} = useObras();
   const obra = obras.find((o) => o.id === route.params.obraId);
   const [panel, setPanel] = useState<Panel>('ninguno');
@@ -35,8 +35,8 @@ export function ObraDetailScreen({route}: Props): React.ReactElement {
     );
   }
 
-  const puedeAprobar = !!user && roleCan(user.role, 'approve');
-  const puedeMedir = !!user && roleCan(user.role, 'create');
+  const puedeAprobar = can('obras.approve');
+  const puedeMedir = can('obras.create');
   const etiqueta = etiquetaAprobar(obra.etapa);
   const puedeSolicitarCambios = obra.etapa === 'propuesta' || obra.etapa === 'certificacion';
 

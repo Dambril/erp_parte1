@@ -5,13 +5,13 @@ import {useAuth} from './AuthContext';
 
 /** Carga las obras y abre el canal de tiempo real mientras haya sesión. */
 export function ObrasProvider({children}: {children: React.ReactNode}): React.ReactElement {
-  const {user} = useAuth();
+  const {status} = useAuth();
 
   useEffect(() => {
-    if (!user) return;
+    if (status !== 'signedIn') return;
     obrasStore.start();
     return () => obrasStore.stop();
-  }, [user]);
+  }, [status]);
 
   return <>{children}</>;
 }

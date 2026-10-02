@@ -1,7 +1,6 @@
 import {Platform} from 'react-native';
 import * as Keychain from 'react-native-keychain';
-import {ApiClient, ObrasStore, type SessionStore} from '@erp/api-client';
-import type {AuthSession} from '@erp/domain';
+import {ApiClient, ObrasStore, type SessionStore, type StoredSession} from '@erp/api-client';
 
 // Builds de desarrollo (__DEV__): API local; el emulador de Android ve el localhost del PC en 10.0.2.2.
 // Builds release: la API desplegada en Render.
@@ -10,16 +9,23 @@ const DEVELOPMENT_API_URL =
   Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
 const baseUrl = __DEV__ ? DEVELOPMENT_API_URL : PRODUCTION_API_URL;
 
-// Los tokens van cifrados en el Keystore de Android, no en AsyncStorage (texto plano).
+// Los tokens van cifrados en el Keystore de Android / Keychain de iOS, no en AsyncStorage (texto plano).
 const KEYCHAIN_SERVICE = 'com.tssera.construcciones.session';
 
 const keychainSessionStore: SessionStore = {
   async load() {
     const entry = await Keychain.getGenericPassword({service: KEYCHAIN_SERVICE});
-    return entry ? (JSON.parse(entry.password) as AuthSession) : null;
+    if (!entry) return null;
+    const stored = JSON.parse(entry.password) as Partial<StoredSession>;
+    return typeof stored.refreshToken === 'string'
+      ? {refreshToken: stored.refreshToken, accessToken: stored.accessToken}
+      : null;
   },
-  async save(session) {
-    await Keychain.setGenericPassword('session', JSON.stringify(session), {service: KEYCHAIN_SERVICE});
+  async save({accessToken, refreshToken}) {
+    await Keychain.setGenericPassword('session', JSON.stringify({accessToken, refreshToken}), {
+      service: KEYCHAIN_SERVICE,
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    });
   },
   async clear() {
     await Keychain.resetGenericPassword({service: KEYCHAIN_SERVICE});
