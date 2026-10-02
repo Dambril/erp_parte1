@@ -1,7 +1,8 @@
 import type {
-  AuthSession, CatalogResource, CatalogResources, CreateLotRequest, CreateMovementRequest, CreateObraInput, CreateTransferRequest,
-  InventoryMovement, InventorySettings, Kardex, KardexQuery, Lot, MedicionInput, Obra, ObrasQuery, Paginated, PublicUser,
-  ReconciliationReport, ResumenObras, StockLevel, StockQuery, TransferResult, UpdateObraInput,
+  AcceptInvitationRequest, AuthSession, CatalogResource, CatalogResources, CreateLotRequest, CreateMovementRequest, CreateObraInput,
+  CreateTransferRequest, InventoryMovement, InventorySettings, Kardex, KardexQuery, Lot, MedicionInput, MeResponse, Obra, ObrasQuery,
+  Paginated, Permission, ReconciliationReport, ResetPasswordRequest, ResumenObras, StockLevel, StockQuery, TransferResult,
+  UpdateObraInput,
 } from '@erp/domain';
 import { ApiError } from './errors';
 
@@ -9,20 +10,40 @@ export * from './errors';
 export * from './realtime';
 export * from './obras-store';
 
-/** Dónde persiste cada plataforma la sesión (Keychain en Android, sessionStorage en web). */
+export interface SessionTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
+/** Lo que una plataforma recupera al arrancar: el refresh token siempre; el access token solo si decidió guardarlo. */
+export interface StoredSession {
+  refreshToken: string;
+  accessToken?: string;
+}
+
+/**
+ * Dónde persiste cada plataforma la sesión. Cada una decide qué guarda de `save`:
+ * la app, ambos tokens en Keychain/Keystore; la web, solo el refresh token (el access token vive en memoria).
+ */
 export interface SessionStore {
-  load(): Promise<AuthSession | null>;
-  save(session: AuthSession): Promise<void>;
+  load(): Promise<StoredSession | null>;
+  save(tokens: SessionTokens): Promise<void>;
   clear(): Promise<void>;
 }
 
 export function memorySessionStore(): SessionStore {
-  let current: AuthSession | null = null;
+  let current: SessionTokens | null = null;
   return {
     load: async () => current,
-    save: async (session) => { current = session; },
+    save: async (tokens) => { current = tokens; },
     clear: async () => { current = null; },
   };
+}
+
+/** `can('obras.approve')` a partir de la lista de permisos que entrega `/me`. */
+export function permissionChecker(permissions: readonly Permission[]): (permission: Permission) => boolean {
+  const granted = new Set(permissions);
+  return (permission) => granted.has(permission);
 }
 
 export interface ApiClientOptions {
@@ -48,7 +69,8 @@ function queryString(query: object = {}): string {
   return params.length ? `?${params.join('&')}` : '';
 }
 
-type SessionListener = (session: AuthSession | null) => void;
+/** Recibe los datos de `/me` con sesión iniciada, o null cuando la sesión termina. */
+type SessionListener = (me: MeResponse | null) => void;
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
@@ -59,8 +81,9 @@ export class ApiClient {
   readonly baseUrl: string;
   private readonly store: SessionStore;
   private accessToken?: string;
-  private session: AuthSession | null = null;
-  private refreshing: Promise<AuthSession | null> | null = null;
+  private session: SessionTokens | null = null;
+  private currentMe: MeResponse | null = null;
+  private refreshing: Promise<SessionTokens | null> | null = null;
   private readonly listeners = new Set<SessionListener>();
 
   constructor(options: ApiClientOptions = {}) {
@@ -76,8 +99,13 @@ export class ApiClient {
 
   // ── Sesión ──────────────────────────────────────────────────────
 
-  getSession(): AuthSession | null {
+  getSession(): SessionTokens | null {
     return this.session;
+  }
+
+  /** Usuario, empresa, rol y permisos de la sesión actual (null sin sesión). */
+  getMe(): MeResponse | null {
+    return this.currentMe;
   }
 
   /** Avisa cada vez que la sesión cambia; con `null` la app debe volver al login. */
@@ -86,32 +114,62 @@ export class ApiClient {
     return () => this.listeners.delete(listener);
   }
 
-  async restoreSession(): Promise<AuthSession | null> {
-    this.session = await this.store.load().catch(() => null);
-    return this.session;
+  /**
+   * Recupera la sesión guardada: renueva el par si no hay access token y carga `/me`.
+   * Devuelve null si no había sesión o ya no es válida. Sin red lanza `NETWORK_ERROR` y conserva lo guardado.
+   */
+  async restoreSession(): Promise<MeResponse | null> {
+    const stored = await this.store.load().catch(() => null);
+    if (!stored?.refreshToken) return null;
+    this.session = { accessToken: stored.accessToken ?? '', refreshToken: stored.refreshToken };
+    if (!stored.accessToken && !(await this.refreshSession())) return null;
+    try {
+      return await this.loadMe();
+    } catch (error) {
+      // loadMe ya cerró la sesión si no era un problema de red.
+      if (error instanceof ApiError && error.code === 'NETWORK_ERROR') throw error;
+      return null;
+    }
   }
 
-  async login(email: string, password: string): Promise<AuthSession> {
-    const session = await this.send<AuthSession>('POST', '/auth/login', { email, password }, false);
-    await this.setSession(session);
-    return session;
+  /** Inicia sesión y carga `/me`: los permisos están disponibles antes de avisar a los oyentes. */
+  async login(email: string, password: string): Promise<MeResponse> {
+    const { accessToken, refreshToken } = await this.send<AuthSession>('POST', '/auth/login', { email, password }, false);
+    this.session = { accessToken, refreshToken };
+    await this.store.save(this.session).catch(() => undefined);
+    return this.loadMe();
   }
 
+  /** Revoca la sesión en la API y borra los tokens locales, aunque la API no responda. */
   async logout(): Promise<void> {
-    const refreshToken = this.session?.refreshToken;
-    await this.setSession(null);
-    if (refreshToken) await this.send('POST', '/auth/logout', { refreshToken }, false).catch(() => undefined);
+    if (this.session) await this.send('POST', '/auth/logout').catch(() => undefined);
+    await this.clearSession();
   }
 
-  me(): Promise<PublicUser> {
-    return this.send('GET', '/auth/me');
+  me(): Promise<MeResponse> {
+    return this.send('GET', '/me');
+  }
+
+  /** Responde igual exista o no la cuenta. */
+  async forgotPassword(email: string): Promise<void> {
+    await this.send('POST', '/auth/password/forgot', { email }, false);
+  }
+
+  /** No inicia sesión: después hay que entrar con la contraseña nueva. */
+  async resetPassword(input: ResetPasswordRequest): Promise<void> {
+    await this.send('POST', '/auth/password/reset', input, false);
+  }
+
+  /** Activa una cuenta invitada. No inicia sesión. */
+  async acceptInvitation(input: AcceptInvitationRequest): Promise<void> {
+    await this.send('POST', '/auth/invitations/accept', input, false);
   }
 
   /**
    * Renueva el par de tokens. Varias llamadas simultáneas comparten la misma petición, porque
    * el refresh token es de un solo uso. Devuelve null (y cierra la sesión) si ya no es válido.
    */
-  refreshSession(): Promise<AuthSession | null> {
+  refreshSession(): Promise<SessionTokens | null> {
     if (!this.refreshing) {
       this.refreshing = this.doRefresh().finally(() => { this.refreshing = null; });
     }
@@ -225,24 +283,39 @@ export class ApiClient {
     throw new ApiError(response.status, json.error?.message || 'Request failed', code);
   }
 
-  private async doRefresh(): Promise<AuthSession | null> {
+  private async doRefresh(): Promise<SessionTokens | null> {
     const refreshToken = this.session?.refreshToken;
     if (!refreshToken) return null;
     try {
-      const session = await this.send<AuthSession>('POST', '/auth/refresh', { refreshToken }, false);
-      await this.setSession(session);
-      return session;
+      const { accessToken, refreshToken: next } = await this.send<AuthSession>('POST', '/auth/refresh', { refreshToken }, false);
+      this.session = { accessToken, refreshToken: next };
+      await this.store.save(this.session).catch(() => undefined);
+      return this.session;
     } catch (error) {
       // Sin red no se pierde la sesión: se reintentará más tarde.
       if (error instanceof ApiError && error.code === 'NETWORK_ERROR') throw error;
-      await this.setSession(null);
+      await this.clearSession();
       return null;
     }
   }
 
-  private async setSession(session: AuthSession | null): Promise<void> {
-    this.session = session;
-    await (session ? this.store.save(session) : this.store.clear()).catch(() => undefined);
-    for (const listener of this.listeners) listener(session);
+  /** Carga `/me` y avisa a los oyentes. Si falla por algo distinto a la red, la sesión no sirve y se cierra. */
+  private async loadMe(): Promise<MeResponse> {
+    try {
+      this.currentMe = await this.me();
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === 'NETWORK_ERROR')) await this.clearSession();
+      throw error;
+    }
+    for (const listener of this.listeners) listener(this.currentMe);
+    return this.currentMe;
+  }
+
+  private async clearSession(): Promise<void> {
+    const hadSession = this.session !== null || this.currentMe !== null;
+    this.session = null;
+    this.currentMe = null;
+    await this.store.clear().catch(() => undefined);
+    if (hadSession) for (const listener of this.listeners) listener(null);
   }
 }
