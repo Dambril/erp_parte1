@@ -19,6 +19,8 @@ import type {RootStackParamList} from '../navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProposalDetail'>;
 
+const NO_TARGET = 'Sin meta';
+
 export function ProposalDetailScreen({route, navigation}: Props): React.ReactElement {
   const {proposalId} = route.params;
   const {can} = useAuth();
@@ -51,7 +53,9 @@ export function ProposalDetailScreen({route, navigation}: Props): React.ReactEle
           <StatusBadge label={PROPOSAL_STATUS_LABEL[proposal.status]} tone={proposalStatusTone[proposal.status]} />
         </View>
         <Text style={[typography.body, styles.muted]}>
-          {proposal.folio} · {proposal.client.name} · {proposal.location} · {PROJECT_TYPE_LABEL[proposal.type]}
+          {/* Un borrador puede no tener aún cliente, ubicación o tipo. */}
+          {[proposal.folio, proposal.client?.name, proposal.location, proposal.type && PROJECT_TYPE_LABEL[proposal.type]]
+            .filter(Boolean).join(' · ')}
         </Text>
         <Text style={[typography.bodySmall, styles.muted]}>
           {proposal.submittedAt ? `Enviada el ${formatDate(proposal.submittedAt)}` : 'Sin enviar'}
@@ -76,9 +80,9 @@ export function ProposalDetailScreen({route, navigation}: Props): React.ReactEle
         </Card>
 
         <Card title="Impacto estimado">
-          <Row label="CO₂ evitado" value={`${formatNumber(targets.co2TonsPerYear)} t/año`} />
-          <Row label="Ahorro de energía" value={`${targets.energySavingPct}%`} />
-          <Row label="Agua" value={`${formatNumber(targets.waterM3PerYear)} m³/año`} />
+          <Row label="CO₂ evitado" value={targets.co2TonsPerYear === null ? NO_TARGET : `${formatNumber(targets.co2TonsPerYear)} t/año`} />
+          <Row label="Ahorro de energía" value={targets.energySavingPct === null ? NO_TARGET : `${targets.energySavingPct}%`} />
+          <Row label="Agua" value={targets.waterM3PerYear === null ? NO_TARGET : `${formatNumber(targets.waterM3PerYear)} m³/año`} />
         </Card>
 
         <Card title="Materiales">
@@ -96,15 +100,21 @@ export function ProposalDetailScreen({route, navigation}: Props): React.ReactEle
         {/* Solo si la API envió el monto. */}
         {proposalHasAmounts(proposal) ? (
           <Card title="Presupuesto estimado">
-            <Text style={[typography.h1, styles.title]}>{formatMoney(proposal.estimatedBudget)}</Text>
+            {proposal.estimatedBudget ? (
+              <Text style={[typography.h1, styles.title]}>{formatMoney(proposal.estimatedBudget)}</Text>
+            ) : (
+              <Notice text="Sin capturar." />
+            )}
           </Card>
         ) : null}
 
         <Card title="Certificación objetivo">
           <Text style={[typography.body, styles.text]}>
-            {certification.type === 'none'
-              ? 'Sin certificación objetivo.'
-              : [certification.type, certification.level].filter(Boolean).join(' ')}
+            {!certification
+              ? 'Sin elegir.'
+              : certification.type === 'none'
+                ? 'Sin certificación objetivo.'
+                : [certification.type, certification.level].filter(Boolean).join(' ')}
           </Text>
         </Card>
       </ScrollView>

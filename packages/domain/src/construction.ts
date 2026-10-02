@@ -7,6 +7,8 @@ import { CustomFieldsSchema, PaginationQuerySchema } from './common';
 export const MoneyStringSchema = z.string().trim()
   .regex(/^-?\d{1,13}\.\d{2}$/, 'Monto con dos decimales, por ejemplo "38600000.00"');
 export const NonZeroMoneySchema = MoneyStringSchema.refine((value) => /[1-9]/.test(value), 'El monto no puede ser cero');
+export const PositiveMoneySchema = MoneyStringSchema
+  .refine((value) => !value.startsWith('-') && /[1-9]/.test(value), 'El monto debe ser mayor que cero');
 export type MoneyString = string;
 
 export function isNegativeMoney(amount: MoneyString): boolean {
@@ -80,6 +82,13 @@ export const PHASE_STATUS_LABEL: Record<PhaseStatus, string> = {
 
 export const CertificationTypeSchema = z.enum(['none', 'EDGE', 'LEED']);
 export type CertificationType = z.infer<typeof CertificationTypeSchema>;
+export const CERTIFICATION_TYPE_LABEL: Record<CertificationType, string> = { none: 'Ninguna', EDGE: 'EDGE', LEED: 'LEED' };
+/** Niveles que admite cada certificación; `none` no lleva nivel. */
+export const CERTIFICATION_LEVELS: Record<CertificationType, readonly string[]> = {
+  none: [],
+  EDGE: ['EDGE Certified', 'EDGE Advanced', 'EDGE Zero Carbon'],
+  LEED: ['Certified', 'Silver', 'Gold', 'Platinum'],
+};
 
 export const RequirementStatusSchema = z.enum(['pending', 'in_review', 'met']);
 export type RequirementStatus = z.infer<typeof RequirementStatusSchema>;
@@ -175,8 +184,11 @@ export const ProjectsQuerySchema = PaginationQuerySchema.extend({
 });
 export type ProjectsQuery = z.input<typeof ProjectsQuerySchema>;
 
-export const ProposalsQuerySchema = PageSchema.extend({ status: ProposalStatusSchema.optional() });
+export const ProposalsQuerySchema = PaginationQuerySchema.extend({ status: ProposalStatusSchema.optional() });
 export type ProposalsQuery = z.input<typeof ProposalsQuerySchema>;
+
+export const TrashQuerySchema = PageSchema;
+export type TrashQuery = z.input<typeof TrashQuerySchema>;
 
 export const PageQuerySchema = PageSchema;
 export type PageQuery = z.input<typeof PageQuerySchema>;
@@ -212,6 +224,108 @@ export type TransitionProjectRequest = z.infer<typeof TransitionProjectSchema>;
 export const RejectProposalSchema = z.object({ reason: text(1000) });
 export type RejectProposalRequest = z.infer<typeof RejectProposalSchema>;
 
+// Propuestas: validación en dos niveles. El borrador acepta campos vacíos (`null`); el envío exige todo.
+
+const REQUIRED = 'Este campo es obligatorio';
+const END_BEFORE_START = 'La fecha de entrega debe ser posterior a la de inicio';
+// Un campo vacío de un borrador llega como `null`: se informa como obligatorio, no como error de tipo.
+const required = {
+  errorMap: (issue: z.ZodIssueOptionalMessage, ctx: z.ErrorMapCtx) => ({
+    message: issue.code === 'invalid_type' || issue.code === 'invalid_enum_value' ? REQUIRED : ctx.defaultError,
+  }),
+};
+const requiredText = (max: number) => z.string(required).trim().min(1, REQUIRED).max(max);
+const draftText = (max: number) => z.string().trim().max(max).nullable().default(null).transform((value) => value || null);
+const target = (max: number) => z.number().min(0).max(max).nullable().default(null);
+
+const ProposalTargetsSchema = z.object({
+  co2TonsPerYear: target(1_000_000_000),
+  energySavingPct: target(100),
+  waterM3PerYear: target(1_000_000_000),
+}).default({});
+
+type DatesInput = { estimatedStart?: string | null; estimatedEnd?: string | null };
+type CertificationInput = { certification?: { type: CertificationType; level: string | null } | null };
+
+function checkDates({ estimatedStart, estimatedEnd }: DatesInput, ctx: z.RefinementCtx): void {
+  if (estimatedStart && estimatedEnd && estimatedEnd <= estimatedStart) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: END_BEFORE_START, path: ['estimatedEnd'] });
+  }
+}
+
+/** Con `mustChoose`, una certificación distinta de `none` exige nivel; siempre se rechaza un nivel que no es suyo. */
+function checkLevel(mustChoose: boolean) {
+  return ({ certification }: CertificationInput, ctx: z.RefinementCtx): void => {
+    if (!certification) return;
+    const levels = CERTIFICATION_LEVELS[certification.type];
+    const path = ['certification', 'level'];
+    if (certification.level === null) {
+      if (mustChoose && levels.length > 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: REQUIRED, path });
+    } else if (!levels.includes(certification.level)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'El nivel no corresponde a la certificación', path });
+    }
+  };
+}
+
+const draftFields = {
+  name: requiredText(160),
+  client: z.object({ name: text(160) }).nullable().default(null),
+  location: draftText(160),
+  type: ProjectTypeSchema.nullable().default(null),
+  scope: draftText(4000),
+  estimatedStart: DateSchema.nullable().default(null),
+  estimatedEnd: DateSchema.nullable().default(null),
+  estimatedBudget: PositiveMoneySchema.nullable().default(null),
+  certification: z.object({ type: CertificationTypeSchema, level: z.string().trim().min(1).max(60).nullable().default(null) })
+    .nullable().default(null),
+  targets: ProposalTargetsSchema,
+  /** La lista enviada reemplaza a la actual. En un borrador solo el nombre del material es obligatorio. */
+  materials: z.array(z.object({ name: text(160), origin: z.string().trim().max(160), supplier: z.string().trim().max(160) }))
+    .max(50).default([]),
+  custom: CustomFieldsSchema.default({}),
+};
+
+/** Borrador: solo el nombre es obligatorio. */
+export const ProposalDraftSchema = z.object(draftFields).strict().superRefine(checkDates).superRefine(checkLevel(false));
+export type ProposalDraftRequest = z.input<typeof ProposalDraftSchema>;
+export type ProposalDraft = z.output<typeof ProposalDraftSchema>;
+
+/** Edición de un borrador: solo los campos enviados cambian. */
+export const UpdateProposalSchema = z.object(draftFields).partial().strict()
+  .refine((body) => Object.keys(body).length > 0, { message: 'Sin cambios' })
+  .superRefine(checkDates).superRefine(checkLevel(false));
+export type UpdateProposalRequest = z.input<typeof UpdateProposalSchema>;
+
+const generalFields = {
+  name: requiredText(160),
+  client: z.object({ name: requiredText(160) }, required),
+  location: requiredText(160),
+  type: z.enum(ProjectTypeSchema.options, required),
+  scope: requiredText(4000),
+};
+const scheduleFields = {
+  estimatedStart: z.string(required).date('Fecha en formato AAAA-MM-DD'),
+  estimatedEnd: z.string(required).date('Fecha en formato AAAA-MM-DD'),
+  estimatedBudget: z.string(required).pipe(PositiveMoneySchema),
+};
+const sustainabilityFields = {
+  certification: z.object({ type: z.enum(CertificationTypeSchema.options, required), level: z.string().nullable() }, required),
+  targets: ProposalTargetsSchema,
+  materials: z.array(z.object({ name: requiredText(160), origin: requiredText(160), supplier: requiredText(160) })).max(50),
+};
+
+/** Lo que debe cumplir una propuesta para pasar a revisión. */
+export const ProposalSubmitSchema = z.object({ ...generalFields, ...scheduleFields, ...sustainabilityFields })
+  .superRefine(checkDates).superRefine(checkLevel(true));
+export type ProposalSubmitInput = z.input<typeof ProposalSubmitSchema>;
+
+/** Las mismas reglas del envío, partidas por paso del formulario: datos generales, fechas y presupuesto, sustentabilidad. */
+export const PROPOSAL_STEP_SCHEMAS = [
+  z.object(generalFields),
+  z.object(scheduleFields).superRefine(checkDates),
+  z.object(sustainabilityFields).superRefine(checkLevel(true)),
+] as const;
+
 /** Siempre crea un `adjustment`: positivo aumenta el presupuesto, negativo lo reduce. */
 export const CreateBudgetMovementSchema = z.object({
   amount: NonZeroMoneySchema,
@@ -241,25 +355,33 @@ export interface ImpactTargets {
 
 export interface ProposalMaterial { name: string; origin: string; supplier: string }
 
+/** Metas de una propuesta: opcionales, a diferencia del impacto de una obra. */
+export interface ProposalTargets {
+  co2TonsPerYear: number | null;
+  energySavingPct: number | null;
+  waterM3PerYear: number | null;
+}
+
+// Un borrador puede estar incompleto: lo que aún no se captura llega como `null`.
 export interface ProposalSummary {
   id: string;
   folio: string;
   name: string;
-  client: ClientRef;
-  location: string;
-  type: ProjectType;
+  client: ClientRef | null;
+  location: string | null;
+  type: ProjectType | null;
   status: ProposalStatus;
   submittedAt: string | null;
-  certification: { type: CertificationType; level: string | null };
+  certification: { type: CertificationType; level: string | null } | null;
 }
-export interface ProposalSummaryWithAmounts extends ProposalSummary { estimatedBudget: MoneyString }
+export interface ProposalSummaryWithAmounts extends ProposalSummary { estimatedBudget: MoneyString | null }
 
 export interface ProposalDetail extends ProposalSummary {
-  scope: string;
+  scope: string | null;
   materials: ProposalMaterial[];
   estimatedStart: string | null;
   estimatedEnd: string | null;
-  targets: ImpactTargets;
+  targets: ProposalTargets;
   decidedAt: string | null;
   decidedBy: string | null;
   rejectionReason: string | null;
@@ -270,7 +392,17 @@ export interface ProposalDetail extends ProposalSummary {
   updatedAt: string;
   custom: Record<string, unknown>;
 }
-export interface ProposalDetailWithAmounts extends ProposalDetail { estimatedBudget: MoneyString }
+export interface ProposalDetailWithAmounts extends ProposalDetail { estimatedBudget: MoneyString | null }
+
+/** Elemento de la Papelera. Nunca lleva montos. */
+export interface TrashItem {
+  id: string;
+  kind: 'project' | 'proposal';
+  folio: string;
+  name: string;
+  deletedAt: string;
+  deletedBy: { id: string; name: string } | null;
+}
 
 export interface ProjectPhase {
   key: string;
@@ -335,7 +467,7 @@ export function budgetHasAmounts(budget: BudgetSummary): budget is BudgetSummary
   return 'currentBudget' in budget;
 }
 
-export function proposalHasAmounts<T extends ProposalSummary>(proposal: T): proposal is T & { estimatedBudget: MoneyString } {
+export function proposalHasAmounts<T extends ProposalSummary>(proposal: T): proposal is T & { estimatedBudget: MoneyString | null } {
   return 'estimatedBudget' in proposal;
 }
 

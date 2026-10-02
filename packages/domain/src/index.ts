@@ -40,6 +40,9 @@ export type BaseDocument = z.infer<typeof BaseDocumentSchema>;
 /** `invited`: aún no acepta la invitación (no tiene contraseña); `deactivated`: no puede iniciar sesión. */
 export const UserStatusSchema = z.enum(['active', 'invited', 'deactivated']);
 export type UserStatus = z.infer<typeof UserStatusSchema>;
+export const USER_STATUS_LABEL: Record<UserStatus, string> = {
+  active: 'Activo', invited: 'Invitación pendiente', deactivated: 'Desactivado',
+};
 
 export const UserSchema = BaseDocumentSchema.extend({
   email: z.string().email(),
@@ -138,6 +141,49 @@ export const AcceptInvitationRequestSchema = ResetPasswordRequestSchema;
 export type AcceptInvitationRequest = z.infer<typeof AcceptInvitationRequestSchema>;
 
 export type PublicUser = Omit<User, 'custom'>;
+
+// ── Usuarios y perfil ──────────────────────────────────────────────
+
+/** Roles que se pueden asignar al invitar o al cambiar de rol. */
+export const AssignableRoleSchema = z.enum(['admin', 'user']);
+export type AssignableRole = z.infer<typeof AssignableRoleSchema>;
+
+const PersonNameSchema = z.string().trim().min(1, 'Escribe el nombre').max(200);
+
+export const InviteUserRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Escribe un correo válido'),
+  name: PersonNameSchema,
+  role: AssignableRoleSchema,
+});
+export type InviteUserRequest = z.infer<typeof InviteUserRequestSchema>;
+
+/** `emailSent: false` si el correo no salió: la cuenta queda invitada y se puede reenviar. */
+export interface InviteUserResponse {
+  user: PublicUser;
+  emailSent: boolean;
+}
+
+export const ChangeRoleRequestSchema = z.object({ role: AssignableRoleSchema });
+export type ChangeRoleRequest = z.infer<typeof ChangeRoleRequestSchema>;
+
+export const UsersQuerySchema = PaginationQuerySchema.extend({ status: UserStatusSchema.optional() });
+export type UsersQuery = z.input<typeof UsersQuerySchema>;
+
+export const UpdateProfileRequestSchema = z.object({ name: PersonNameSchema });
+export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequestSchema>;
+
+export const ChangePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1, 'Escribe tu contraseña actual').max(PASSWORD_MAX_LENGTH),
+  newPassword: PasswordSchema,
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;
+
+/** Formulario de cambio de contraseña: la API solo recibe `currentPassword` y `newPassword`. */
+export const ChangePasswordFormSchema = ChangePasswordRequestSchema.extend({ confirmPassword: z.string() })
+  .refine((form) => form.newPassword === form.confirmPassword, {
+    message: 'Las contraseñas no coinciden', path: ['confirmPassword'],
+  });
+export type ChangePasswordForm = z.infer<typeof ChangePasswordFormSchema>;
 
 export interface AuthSession {
   accessToken: string;

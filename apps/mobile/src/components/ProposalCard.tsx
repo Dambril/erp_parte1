@@ -22,7 +22,7 @@ export function ProposalCard({proposal, onPress}: Props): React.ReactElement {
             {proposal.name}
           </Text>
           <Text style={[typography.bodySmall, styles.muted]} numberOfLines={1}>
-            {proposal.client.name}
+            {proposal.client?.name ?? 'Sin cliente'}
           </Text>
         </View>
         <StatusBadge label={PROPOSAL_STATUS_LABEL[proposal.status]} tone={proposalStatusTone[proposal.status]} />
@@ -32,7 +32,7 @@ export function ProposalCard({proposal, onPress}: Props): React.ReactElement {
           {proposal.submittedAt ? `Enviada el ${formatDate(proposal.submittedAt)}` : 'Sin enviar'}
         </Text>
         {/* El monto solo aparece si la API lo devolvió. */}
-        {proposalHasAmounts(proposal) ? (
+        {proposalHasAmounts(proposal) && proposal.estimatedBudget ? (
           <Text style={[typography.h3, styles.amount]}>{formatMoney(proposal.estimatedBudget)}</Text>
         ) : null}
       </View>
