@@ -42,6 +42,11 @@ export class ProjectsController {
     response.status(204).end();
   };
 
+  restore = async (request: Request, response: Response) => {
+    const { id } = IdParamSchema.parse(request.params);
+    ok(response, await this.service().restore(id, actorOf(request)));
+  };
+
   activity = async (request: Request, response: Response) => {
     const { id } = IdParamSchema.parse(request.params);
     ok(response, await this.service().activity(id, PageQuerySchema.parse(request.query), actorOf(request)));

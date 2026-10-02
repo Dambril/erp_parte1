@@ -15,6 +15,7 @@ export function projectsRoutes(services: () => ConstructionServices): Router {
   router.post('/:id/archive', requirePermission('construction.projects:archive'), asyncHandler(controller.archive));
   router.post('/:id/unarchive', requirePermission('construction.projects:archive'), asyncHandler(controller.unarchive));
   router.delete('/:id', requirePermission('construction.projects:delete'), asyncHandler(controller.remove));
+  router.post('/:id/restore', requirePermission('construction.projects:restore'), asyncHandler(controller.restore));
   router.get('/:id/activity', requirePermission('construction.projects:read'), asyncHandler(controller.activity));
   return router;
 }

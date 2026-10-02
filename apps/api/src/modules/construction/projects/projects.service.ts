@@ -104,6 +104,12 @@ export class ProjectsService {
     this.deps.publish(actor.tenantId, { type: 'construction.changed', entity: 'project', id });
   }
 
+  async restore(id: string, actor: RequestUser): Promise<AnyProjectDetail> {
+    const project = await this.deps.projects.restore(id, actor.tenantId);
+    if (!project) throw projectNotFound();
+    return this.afterChange(project, actor, 'project.restored', 'Restauró la obra desde la Papelera');
+  }
+
   async activity(id: string, query: z.output<typeof PageQuerySchema>, actor: RequestUser): Promise<Paginated<ActivityEntry>> {
     if (!(await this.deps.projects.findById(id, actor.tenantId))) throw projectNotFound();
     const page = await this.deps.audit.findPage(actor.tenantId, 'project', id, query);

@@ -106,6 +106,15 @@ export class ProjectsRepository extends TenantRepository<ProjectDocument> {
     return result.modifiedCount === 1;
   }
 
+  /** Saca la obra de la papelera tal como estaba (si estaba archivada, vuelve a Archivadas). `null` si no está eliminada. */
+  async restore(id: string, tenantId: string): Promise<ProjectDocument | null> {
+    return (await this.collection.findOneAndUpdate(
+      this.scopedDeleted(tenantId, { _id: id } as Filter<ProjectDocument>),
+      set({ deletedAt: null, deletedBy: null }),
+      { returnDocument: 'after' },
+    )) as ProjectDocument | null;
+  }
+
   // ── Dashboard ───────────────────────────────────────────────────
 
   async kpis(tenantId: string): Promise<ProjectKpis> {
@@ -179,5 +188,7 @@ export async function ensureProjectsIndexes(db: Db): Promise<void> {
   await db.collection(PROJECTS_COLLECTION).createIndexes([
     { key: { tenantId: 1, status: 1, archivedAt: 1, deletedAt: 1 }, name: 'tenant_status_archived_deleted' },
     { key: { tenantId: 1, folio: 1 }, name: 'tenant_folio_unique', unique: true },
+    // Papelera: eliminadas del tenant, de la más reciente a la más antigua.
+    { key: { tenantId: 1, deletedAt: -1 }, name: 'tenant_deleted' },
   ]);
 }

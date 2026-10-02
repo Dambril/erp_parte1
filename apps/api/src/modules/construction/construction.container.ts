@@ -15,6 +15,8 @@ import { ensureProjectsIndexes, projectsRepository } from './projects/projects.r
 import { ProjectsService } from './projects/projects.service';
 import { ensureProposalsIndexes, proposalsRepository } from './proposals/proposals.repository';
 import { ProposalsService } from './proposals/proposals.service';
+import { trashRepository } from './trash/trash.repository';
+import { TrashService } from './trash/trash.service';
 
 export function constructionRepositories(db: Db) {
   return {
@@ -22,6 +24,7 @@ export function constructionRepositories(db: Db) {
     projects: projectsRepository(db),
     budget: budgetMovementsRepository(db),
     certifications: certificationsRepository(db),
+    trash: trashRepository(db),
     counters: countersRepository(db),
     audit: auditTrailRepository(db),
   };
@@ -38,6 +41,7 @@ export function constructionServices(db: Db, publish: RealtimePublisher, now: ()
     budget: new BudgetService({ ...repositories, publish }),
     certifications: new CertificationsService({ ...repositories, publish, now }),
     dashboard: new DashboardService({ ...repositories, now }),
+    trash: new TrashService({ ...repositories, users }),
   };
 }
 export type ConstructionServices = ReturnType<typeof constructionServices>;
