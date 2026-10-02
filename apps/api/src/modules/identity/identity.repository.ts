@@ -115,6 +115,11 @@ export class SessionsRepository {
     return this.collection.findOne({ refreshTokenHash });
   }
 
+  /** Sesión vigente del tenant: ni revocada ni vencida. */
+  async findLive(id: string, tenantId: string): Promise<SessionDocument | null> {
+    return this.collection.findOne({ _id: id, tenantId, revokedAt: null, expiresAt: { $gt: new Date() } });
+  }
+
   /** Revoca de forma atómica; devuelve false si ya estaba revocada (o no existe). */
   async revoke(id: string, tenantId: string, reason: SessionRevokeReason): Promise<boolean> {
     const now = new Date();

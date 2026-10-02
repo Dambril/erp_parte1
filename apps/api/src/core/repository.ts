@@ -67,6 +67,11 @@ export class TenantRepository<T extends TenantScopedDocument> {
     return { ...filter, tenantId: this.requireTenant(tenantId), deletedAt: null } as Filter<T>;
   }
 
+  /** Lo contrario de `scoped`: solo borrados lógicos del tenant. Es para la papelera (listar y restaurar). */
+  protected scopedDeleted(tenantId: string | undefined, filter: Filter<T> = {}): Filter<T> {
+    return { ...filter, tenantId: this.requireTenant(tenantId), deletedAt: { $ne: null } } as Filter<T>;
+  }
+
   async findById(id: string, tenantId?: string, session?: ClientSession): Promise<T | null> {
     return (await this.collection.findOne(this.scoped(tenantId, { _id: id } as Filter<T>), { session })) as T | null;
   }

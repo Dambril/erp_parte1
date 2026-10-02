@@ -193,6 +193,28 @@ describe('sessions', () => {
     expect((await request(app).post('/auth/refresh').send({ refreshToken: other.refreshToken })).status).toBe(200);
   });
 
+  it('an access token stops working as soon as its session is closed or rotated', async () => {
+    const closed = await login('viewer-a@example.com');
+    expect((await request(app).get('/me').set(bearer(closed.accessToken))).status).toBe(200);
+    await request(app).post('/auth/logout').set(bearer(closed.accessToken));
+    const afterLogout = await request(app).get('/me').set(bearer(closed.accessToken));
+    expect(afterLogout.status).toBe(401);
+    expect(afterLogout.body.error.code).toBe('INVALID_TOKEN');
+
+    const rotated = await login('viewer-a@example.com');
+    const next = await request(app).post('/auth/refresh').send({ refreshToken: rotated.refreshToken });
+    expect((await request(app).get('/me').set(bearer(rotated.accessToken))).status).toBe(401);
+    expect((await request(app).get('/me').set(bearer(next.body.data.accessToken))).status).toBe(200);
+  });
+
+  it('takes the role from the database, not from the access token', async () => {
+    const user = await insertUser('promoted@example.com', 'active');
+    const { accessToken } = await login('promoted@example.com');
+    expect((await request(app).get('/users').set(bearer(accessToken))).status).toBe(403);
+    await getDatabase().collection(USERS_COLLECTION).updateOne({ _id: user._id as never }, { $set: { role: 'admin' } });
+    expect((await request(app).get('/users').set(bearer(accessToken))).status).toBe(200);
+  });
+
   it('a logged-out refresh token is just invalid, not treated as theft', async () => {
     const current = await login('viewer-a@example.com');
     await request(app).post('/auth/logout').set(bearer(current.accessToken));

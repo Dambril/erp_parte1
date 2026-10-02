@@ -4,7 +4,9 @@ import jwt from 'jsonwebtoken';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { RealtimeEvent } from '@erp/domain';
 import type { ServerConfig } from '@erp/config';
+import { getDatabase } from '../config/database';
 import { logger } from '../config/logger';
+import { resolveAccess } from '../modules/identity/access';
 import { verifyAccessToken } from '../modules/identity/tokens';
 
 export const REALTIME_PATH = '/ws';
@@ -15,7 +17,7 @@ export const CLOSE_UNAUTHORIZED = 4401;
 
 export type RealtimePublisher = (tenantId: string, event: RealtimeEvent) => void;
 
-interface ClientState { tenantId?: string; alive: boolean }
+interface ClientState { tenantId?: string; authenticating?: boolean; alive: boolean }
 
 /**
  * Canal de tiempo real por tenant. El cliente abre `wss://.../ws` y su primer mensaje debe ser
@@ -73,18 +75,21 @@ export class RealtimeHub {
       this.clients.delete(socket);
     });
     socket.on('message', (data: RawData) => {
-      if (state.tenantId) return; // tras autenticar el canal es solo de servidor a cliente
+      if (state.tenantId || state.authenticating) return; // tras autenticar el canal es solo de servidor a cliente
       clearTimeout(authTimer);
-      this.authenticate(socket, state, data);
+      state.authenticating = true;
+      void this.authenticate(socket, state, data);
     });
   }
 
-  private authenticate(socket: WebSocket, state: ClientState, data: RawData): void {
+  // La sesión y la cuenta se comprueban al conectar; una conexión ya abierta dura como mucho lo que su token.
+  private async authenticate(socket: WebSocket, state: ClientState, data: RawData): Promise<void> {
     try {
       const message = JSON.parse(data.toString()) as { type?: string; token?: string };
       if (message.type !== 'auth' || typeof message.token !== 'string') throw new Error('Expected auth message');
-      const claims = verifyAccessToken(message.token, this.config);
-      state.tenantId = claims.tenantId;
+      const user = await resolveAccess(getDatabase(), verifyAccessToken(message.token, this.config));
+      if (!user) throw new Error('Session revoked or account inactive');
+      state.tenantId = user.tenantId;
 
       const { exp } = jwt.decode(message.token) as jwt.JwtPayload;
       const msToExpiry = (exp as number) * 1000 - Date.now();

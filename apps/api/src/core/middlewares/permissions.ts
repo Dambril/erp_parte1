@@ -34,3 +34,15 @@ export function requirePermission(target: ScopedPermission | PermissionModule, a
     next();
   };
 }
+
+/** Guard para rutas que sirven a más de un permiso (la papelera): basta con tener uno. */
+export function requireAnyPermission(...permissions: ScopedPermission[]): RequestHandler {
+  return (request, _response, next) => {
+    if (!request.user) return next(new HttpError(401, 'UNAUTHENTICATED', 'Authentication required'));
+    const { role } = request.user;
+    if (!permissions.some((permission) => can(role, permission))) {
+      return next(new HttpError(403, 'FORBIDDEN', `Role "${role}" lacks permission ${permissions.join(' or ')}`));
+    }
+    next();
+  };
+}
