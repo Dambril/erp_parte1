@@ -1,48 +1,75 @@
-import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { mensajeError, type ObrasState } from '@erp/api-client';
-import type { PublicUser } from '@erp/domain';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { esErrorDeRed, mensajeError, permissionChecker, type ObrasState } from '@erp/api-client';
+import type { Company, MeResponse, Permission, PublicUser } from '@erp/domain';
 import { apiClient, obrasStore } from './lib/api';
 
+/** `offline`: hay sesión guardada pero no se pudo validar por falta de red. */
+export type SessionStatus = 'loading' | 'signedOut' | 'signedIn' | 'offline';
+
 interface AuthValue {
+  status: SessionStatus;
   user: PublicUser | null;
-  cargandoSesion: boolean;
+  company: Company | null;
+  /** Permisos de `/me`: ambos roles ven el Dashboard; lo que muestra depende de esto. */
+  can: (permission: Permission) => boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  retry: () => void;
+  /** Aviso para la pantalla de login (p. ej. tras cambiar la contraseña). */
+  aviso: string | null;
+  setAviso: (aviso: string | null) => void;
 }
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
+const NOTHING_ALLOWED = () => false;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<PublicUser | null>(null);
-  const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [status, setStatus] = useState<SessionStatus>('loading');
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  const restore = useCallback(() => {
+    setStatus('loading');
+    apiClient.restoreSession()
+      .then((restored) => setStatus(restored ? 'signedIn' : 'signedOut'))
+      .catch((error) => setStatus(esErrorDeRed(error) ? 'offline' : 'signedOut'));
+  }, []);
 
   useEffect(() => {
-    const unsubscribe = apiClient.onSessionChange((session) => setUser(session?.user ?? null));
-    apiClient.restoreSession()
-      .then((session) => setUser(session?.user ?? null))
-      .finally(() => setCargandoSesion(false));
+    // Con null (refresh revocado, logout) se vuelve al login.
+    const unsubscribe = apiClient.onSessionChange((next) => {
+      setMe(next);
+      setStatus(next ? 'signedIn' : 'signedOut');
+    });
+    restore();
     return unsubscribe;
-  }, []);
+  }, [restore]);
 
   // Carga las obras y abre el canal de tiempo real mientras haya sesión.
   useEffect(() => {
-    if (!user) return;
+    if (status !== 'signedIn') return;
     obrasStore.start();
     return () => obrasStore.stop();
-  }, [user]);
+  }, [status]);
 
   const value = useMemo<AuthValue>(() => ({
-    user,
-    cargandoSesion,
+    status,
+    user: me?.user ?? null,
+    company: me?.company ?? null,
+    can: me ? permissionChecker(me.permissions) : NOTHING_ALLOWED,
     login: async (email, password) => {
       try {
         await apiClient.login(email.trim(), password);
+        setAviso(null);
       } catch (error) {
         throw new Error(mensajeError(error));
       }
     },
     logout: () => apiClient.logout(),
-  }), [user, cargandoSesion]);
+    retry: restore,
+    aviso,
+    setAviso,
+  }), [me, status, restore, aviso]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

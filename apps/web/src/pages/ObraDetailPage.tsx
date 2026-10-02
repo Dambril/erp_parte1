@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { mensajeError } from '@erp/api-client';
 import {
   CERTIFICACION_ESTADO_LABEL, MontoSchema, etiquetaAprobar, faseRetrasada, fechaLocalISO, formatearFecha,
-  formatearMonto, formatearNumero, hoyISO, porcentajeMonto, roleCan, type Obra,
+  formatearMonto, formatearNumero, hoyISO, porcentajeMonto, type Obra,
 } from '@erp/domain';
 import { Card, Field, ProgressBar, StatusBadge } from '../components';
 import { obrasStore } from '../lib/api';
@@ -11,7 +11,7 @@ import { navegar, useAuth, useObras } from '../state';
 type Aviso = { texto: string; error: boolean } | null;
 
 export function ObraDetailPage({ id }: { id: string }) {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const { obras, cargando, store } = useObras();
   const obra = obras.find((o) => o.id === id);
   const [aviso, setAviso] = useState<Aviso>(null);
@@ -23,7 +23,6 @@ export function ObraDetailPage({ id }: { id: string }) {
     return <div className="page"><p className="muted">{cargando ? 'Cargando…' : 'La obra no existe o fue eliminada.'}</p></div>;
   }
 
-  const role = user!.role;
   const etiqueta = etiquetaAprobar(obra.etapa);
   const ejecutar = async (accion: () => Promise<unknown>, exito: string) => {
     setEnviando(true);
@@ -56,7 +55,7 @@ export function ObraDetailPage({ id }: { id: string }) {
         <StatusBadge estado={obra.estado} />
       </header>
 
-      {roleCan(role, 'approve') && (etiqueta || obra.etapa === 'propuesta' || obra.etapa === 'certificacion') ? (
+      {can('obras.approve') && (etiqueta || obra.etapa === 'propuesta' || obra.etapa === 'certificacion') ? (
         <div className="card actions">
           {etiqueta ? (
             <button
@@ -96,13 +95,13 @@ export function ObraDetailPage({ id }: { id: string }) {
           <ProgressBar valor={obra.avance} />
           {obra.alcance ? <p className="muted">{obra.alcance}</p> : null}
         </Card>
-        <PresupuestoCard obra={obra} editable={roleCan(role, 'update')} ejecutar={ejecutar} />
+        <PresupuestoCard obra={obra} editable={can('obras.update')} ejecutar={ejecutar} />
       </div>
 
-      <FasesCard obra={obra} editable={roleCan(role, 'update')} ejecutar={ejecutar} />
+      <FasesCard obra={obra} editable={can('obras.update')} ejecutar={ejecutar} />
 
       <div className="grid-2">
-        <ImpactoCard obra={obra} puedeMedir={roleCan(role, 'create') && obra.etapa !== 'propuesta'} ejecutar={ejecutar} />
+        <ImpactoCard obra={obra} puedeMedir={can('obras.create') && obra.etapa !== 'propuesta'} ejecutar={ejecutar} />
         <Card title="Certificación">
           {obra.certificacion ? (
             <p><strong className="verde">{obra.certificacion.tipo} {obra.certificacion.nivelObjetivo}</strong> · {CERTIFICACION_ESTADO_LABEL[obra.certificacion.estado]}</p>
@@ -141,7 +140,7 @@ export function ObraDetailPage({ id }: { id: string }) {
         )}
       </Card>
 
-      {roleCan(role, 'delete') ? (
+      {can('obras.delete') ? (
         <div className="danger-zone">
           <button className="btn btn-danger" onClick={eliminar} disabled={enviando}>Eliminar obra</button>
         </div>

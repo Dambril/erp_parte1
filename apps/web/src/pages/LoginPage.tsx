@@ -1,18 +1,25 @@
 import { useState, type FormEvent } from 'react';
-import { Field } from '../components';
-import { useAuth } from '../state';
+import { ForgotPasswordRequestSchema } from '@erp/domain';
+import { Field, PasswordInput, Spinner } from '../components';
+import { navegar, useAuth } from '../state';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, aviso } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  // Credenciales incorrectas, bloqueo por intentos o sin conexión: el mensaje viene de mensajeError.
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setEnviando(true);
+    const emailValido = ForgotPasswordRequestSchema.safeParse({ email }).success;
+    setEmailError(emailValido ? null : 'Ingresa un correo válido.');
     setError(null);
+    if (!emailValido) return;
+
+    setEnviando(true);
     try {
       await login(email, password);
     } catch (err) {
@@ -26,20 +33,38 @@ export function LoginPage() {
     <div className="login">
       <div className="login-hero">
         <img src="/logo.png" alt="T-Ssera Construcciones" />
-        <p>Construcción con sustentabilidad medible: avance, presupuesto y certificaciones de todas tus obras en un solo panel.</p>
       </div>
-      <form className="login-form" onSubmit={onSubmit}>
-        <h1>Inicia sesión</h1>
-        <p className="muted">Accede al panel de obras y certificaciones.</p>
-        <Field label="Correo">
-          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+      <form className="login-form" onSubmit={onSubmit} noValidate>
+        <h1>Bienvenido de vuelta</h1>
+        {aviso ? <p className="aviso" role="status">{aviso}</p> : null}
+        <Field label="Correo" error={emailError}>
+          <input
+            type="email"
+            autoComplete="username"
+            placeholder="tu@empresa.com"
+            required
+            disabled={enviando}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
         </Field>
         <Field label="Contraseña">
-          <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput
+            autoComplete="current-password"
+            required
+            disabled={enviando}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
         </Field>
-        {error ? <p className="error">{error}</p> : null}
-        <button className="btn btn-primary" disabled={enviando}>{enviando ? 'Entrando…' : 'Entrar'}</button>
-        <p className="muted small">¿Sin acceso? Pide a un administrador que te cree una cuenta.</p>
+        <button type="button" className="auth-link end" onClick={() => navegar('/recuperar')} disabled={enviando}>
+          ¿Olvidaste tu contraseña?
+        </button>
+        {error ? <p className="alerta" role="alert">{error}</p> : null}
+        <button className="btn btn-primary" disabled={enviando || !password}>
+          {enviando ? <Spinner /> : null}
+          Iniciar sesión
+        </button>
       </form>
     </div>
   );
