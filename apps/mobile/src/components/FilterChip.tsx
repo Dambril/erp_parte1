@@ -1,5 +1,6 @@
 import React from 'react';
 import {StyleSheet, Text, TouchableOpacity} from 'react-native';
+import {radii, touchTarget} from '@erp/ui';
 import {colors} from '../theme/colors';
 import {typography} from '../theme/typography';
 
@@ -16,6 +17,8 @@ export function FilterChip({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityState={{selected: active}}
       style={[styles.chip, active && styles.chipActive]}>
       <Text style={[typography.bodySmall, styles.text, active && styles.textActive]}>{label}</Text>
     </TouchableOpacity>
@@ -24,22 +27,23 @@ export function FilterChip({
 
 const styles = StyleSheet.create({
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
+    minHeight: touchTarget,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.linea,
     backgroundColor: colors.blanco,
   },
   chipActive: {
-    backgroundColor: colors.negro,
-    borderColor: colors.negro,
+    backgroundColor: colors.verdeBosque,
+    borderColor: colors.verdeBosque,
   },
   text: {
     color: colors.negro,
     fontWeight: '600',
   },
   textActive: {
-    color: colors.lima,
+    color: colors.blanco,
   },
 });

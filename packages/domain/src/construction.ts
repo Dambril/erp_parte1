@@ -26,6 +26,32 @@ export function formatMoney(amount: MoneyString): string {
   return `${negative ? '-' : ''}$${grouped}.${fraction.padEnd(2, '0')}`;
 }
 
+/**
+ * Convierte lo que escribe una persona ("1,200,000", "1200000.5") en un monto con dos decimales, sin pasar
+ * por `number`. Devuelve `null` si no es un monto positivo válido.
+ */
+export function parseMoneyInput(input: string): MoneyString | null {
+  const match = /^(\d{1,13})(?:\.(\d{0,2}))?$/.exec(input.replace(/[\s,$]/g, ''));
+  if (!match) return null;
+  const amount = `${match[1].replace(/^0+(?=\d)/, '')}.${(match[2] ?? '').padEnd(2, '0')}`;
+  return /[1-9]/.test(amount) ? amount : null;
+}
+
+// ── Formato para mostrar ───────────────────────────────────────────
+
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/** `"2026-03-14"` (o un ISO completo) → `"14 mar 2026"`. */
+export function formatDate(date: string): string {
+  const [year, month, day] = date.slice(0, 10).split('-');
+  return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year}`;
+}
+
+/** Separador de miles para cifras que no son dinero: `5200` → `"5,200"`. */
+export function formatNumber(value: number): string {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 // ── Estados y catálogos fijos ──────────────────────────────────────
 
 export const ProposalStatusSchema = z.enum(['draft', 'in_review', 'approved', 'rejected']);

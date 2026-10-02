@@ -5,7 +5,7 @@ import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {colors} from './src/theme/colors';
 import {AuthProvider} from './src/state/AuthContext';
-import {ObrasProvider} from './src/state/ObrasContext';
+import {ConstructionProvider} from './src/state/ConstructionContext';
 import {RootNavigator} from './src/navigation/RootNavigator';
 
 export default function App(): React.JSX.Element {
@@ -14,11 +14,11 @@ export default function App(): React.JSX.Element {
       <SafeAreaProvider>
         <StatusBar backgroundColor={colors.hueso} barStyle="dark-content" />
         <AuthProvider>
-          <ObrasProvider>
+          <ConstructionProvider>
             <NavigationContainer>
               <RootNavigator />
             </NavigationContainer>
-          </ObrasProvider>
+          </ConstructionProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

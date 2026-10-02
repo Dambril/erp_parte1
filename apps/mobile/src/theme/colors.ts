@@ -1,29 +1,17 @@
-import type {ObraEstado} from '@erp/domain';
+import {colors as tokens} from '@erp/ui';
 
-// Paleta del diseño de Figma "T-Ssera Construcciones" (ver docs/brief pegado en la conversación).
+// Los valores salen de los tokens de `packages/ui`. Estos nombres en español son los que usan las
+// pantallas de acceso (Bloque 1); las pantallas nuevas importan los tokens directamente.
 export const colors = {
-  lima: '#B6FF5C', // primario / CTA
-  negro: '#16150F', // texto principal
-  verdeBosque: '#1F3D2B', // cards oscuras
-  verdeBosqueClaro: '#2E5339', // nav activa / acentos
-  terracota: '#B5651D', // estado "retrasada"
-  hueso: '#F7F7F2', // fondo
-  piedra: '#8C8C86', // texto secundario
-  linea: '#E4E4DE', // bordes
-  exito: '#3CB043', // estado "completada"
-  ambar: '#C98A15', // estado "en progreso"
-  blanco: '#FFFFFF', // cards
+  lima: tokens.lime, // primario / CTA
+  negro: tokens.ink, // texto principal
+  verdeBosque: tokens.forest, // cards oscuras
+  verdeBosqueClaro: tokens.forestSoft, // nav activa / acentos
+  terracota: tokens.terracotta, // estado de alerta
+  hueso: tokens.bone, // fondo
+  piedra: tokens.stone, // íconos y bordes
+  linea: tokens.line, // bordes
+  exito: tokens.success, // estado completado
+  ambar: tokens.amber, // estado en curso
+  blanco: tokens.white, // cards
 } as const;
-
-export {OBRA_ESTADO_LABEL as estadoLabel} from '@erp/domain';
-export type {ObraEstado};
-
-// El brief no especifica color para "certificando" ni "propuesta": se usan tonos de la paleta
-// que los diferencian de "en progreso" (ámbar).
-export const estadoColor: Record<ObraEstado, string> = {
-  propuesta: colors.piedra,
-  en_progreso: colors.ambar,
-  certificando: colors.verdeBosqueClaro,
-  retrasada: colors.terracota,
-  completada: colors.exito,
-};

@@ -8,7 +8,9 @@ import {PrimaryButton} from '../components/PrimaryButton';
 import {CheckEmailScreen} from '../screens/CheckEmailScreen';
 import {ForgotPasswordScreen} from '../screens/ForgotPasswordScreen';
 import {LoginScreen} from '../screens/LoginScreen';
-import {ObraDetailScreen} from '../screens/ObraDetailScreen';
+import {ProjectDetailScreen} from '../screens/ProjectDetailScreen';
+import {ProjectEditScreen} from '../screens/ProjectEditScreen';
+import {ProposalDetailScreen} from '../screens/ProposalDetailScreen';
 import {MainTabs} from './MainTabs';
 
 export type RootStackParamList = {
@@ -16,7 +18,9 @@ export type RootStackParamList = {
   ForgotPassword: {email?: string} | undefined;
   CheckEmail: {email: string};
   Main: undefined;
-  ObraDetail: {obraId: string};
+  ProjectDetail: {projectId: string};
+  ProjectEdit: {projectId: string};
+  ProposalDetail: {proposalId: string};
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -48,7 +52,9 @@ export function RootNavigator(): React.ReactElement {
       {status === 'signedIn' ? (
         <>
           <Stack.Screen name="Main" component={MainTabs} options={{headerShown: false}} />
-          <Stack.Screen name="ObraDetail" component={ObraDetailScreen} options={{title: 'Detalle de propuesta'}} />
+          <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{title: 'Detalle de obra'}} />
+          <Stack.Screen name="ProjectEdit" component={ProjectEditScreen} options={{title: 'Editar obra'}} />
+          <Stack.Screen name="ProposalDetail" component={ProposalDetailScreen} options={{title: 'Detalle de propuesta'}} />
         </>
       ) : (
         <>

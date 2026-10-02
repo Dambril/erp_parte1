@@ -1,6 +1,6 @@
 import {Platform} from 'react-native';
 import * as Keychain from 'react-native-keychain';
-import {ApiClient, ObrasStore, type SessionStore, type StoredSession} from '@erp/api-client';
+import {ApiClient, type SessionStore, type StoredSession} from '@erp/api-client';
 
 // Builds de desarrollo (__DEV__): API local; el emulador de Android ve el localhost del PC en 10.0.2.2.
 // Builds release: la API desplegada en Render.
@@ -33,4 +33,3 @@ const keychainSessionStore: SessionStore = {
 };
 
 export const apiClient = new ApiClient({baseUrl, sessionStore: keychainSessionStore});
-export const obrasStore = new ObrasStore(apiClient);

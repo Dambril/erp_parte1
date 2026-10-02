@@ -5,14 +5,14 @@ import {ROLE_LABEL} from '@erp/domain';
 import {colors} from '../theme/colors';
 import {typography} from '../theme/typography';
 import {useAuth} from '../state/AuthContext';
-import {useObras} from '../state/ObrasContext';
+import {useConstruction} from '../state/ConstructionContext';
 import {PrimaryButton} from '../components/PrimaryButton';
 import {ConexionBadge} from '../components/ConexionBadge';
 import {apiClient} from '../lib/apiClient';
 
 export function PerfilScreen(): React.ReactElement {
   const {user, logout} = useAuth();
-  const {conexion} = useObras();
+  const {conexion} = useConstruction();
 
   return (
     <View style={styles.screen}>

@@ -1,152 +1,194 @@
-import React, {useMemo} from 'react';
-import {RefreshControl, ScrollView, StyleSheet, Text, View} from 'react-native';
+import React from 'react';
+import {FlatList, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useNavigation} from '@react-navigation/native';
-import {CERTIFICACION_ESTADO_LABEL, calcularResumen, formatearMonto, formatearNumero} from '@erp/domain';
-import {colors} from '../theme/colors';
+import {colors, radii, touchTarget} from '@erp/ui';
+import {formatNumber, type AttentionItem, type DashboardKpis} from '@erp/domain';
 import {typography} from '../theme/typography';
+import {tones} from '../theme/status';
 import {useAuth} from '../state/AuthContext';
-import {useObras} from '../state/ObrasContext';
-import {ObraCard} from '../components/ObraCard';
-import {ConexionBadge} from '../components/ConexionBadge';
-import {ProgressBar} from '../components/ProgressBar';
+import {useResource} from '../hooks/useResource';
+import {apiClient} from '../lib/apiClient';
+import {Notice} from '../components/Card';
+import {PrimaryButton} from '../components/PrimaryButton';
+import {ProjectCard} from '../components/ProjectCard';
+import {StatusBadge} from '../components/StatusBadge';
 import type {RootStackParamList} from '../navigation/RootNavigator';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-export function DashboardScreen(): React.ReactElement {
-  const {user} = useAuth();
-  const {obras, cargando, error, conexion, store} = useObras();
-  const navigation = useNavigation<Nav>();
+interface Kpi {
+  key: string;
+  label: string;
+  value: string;
+}
 
-  const resumen = useMemo(() => calcularResumen(obras), [obras]);
-  const presupuesto = resumen.presupuesto[0];
-  const enCurso = useMemo(
-    () => obras.filter((o) => o.etapa === 'ejecucion' || o.etapa === 'certificacion').slice(0, 3),
-    [obras],
-  );
-  const abrir = (obraId: string) => navigation.navigate('ObraDetail', {obraId});
+function kpiTiles(kpis: DashboardKpis): Kpi[] {
+  return [
+    {key: 'active', label: 'Obras activas', value: String(kpis.activeProjects)},
+    {key: 'progress', label: 'Avance promedio', value: `${kpis.averageProgressPct}%`},
+    {key: 'co2', label: 'CO₂ evitado (t/año)', value: formatNumber(kpis.co2TonsPerYear)},
+    {key: 'budget', label: 'Presupuesto ejercido', value: `${kpis.budgetSpentPct}%`},
+  ];
+}
+
+function attentionText(item: AttentionItem): {title: string; detail: string} {
+  switch (item.kind) {
+    case 'proposal_in_review':
+      return {title: item.name, detail: `Propuesta ${item.folio} en revisión`};
+    case 'project_delayed':
+      return {title: item.name, detail: `Retraso de ${item.delayDays} días`};
+    case 'budget_near_limit':
+      return {title: item.name, detail: `${item.spentPct}% del presupuesto ejercido`};
+    case 'requirement_pending':
+      return {title: item.name, detail: `Requisito pendiente: ${item.title}`};
+  }
+}
+
+export function DashboardScreen(): React.ReactElement {
+  const {user, can} = useAuth();
+  const navigation = useNavigation<Nav>();
+  const {data, loading, error, reload} = useResource(() => apiClient.construction.dashboard(), 'dashboard');
+
+  const openProject = (projectId: string) => navigation.navigate('ProjectDetail', {projectId});
+  const openAttention = (item: AttentionItem) =>
+    item.kind === 'proposal_in_review'
+      ? navigation.navigate('ProposalDetail', {proposalId: item.proposalId})
+      : openProject(item.projectId);
 
   return (
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={cargando} onRefresh={() => store.refrescar()} />}>
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} />}>
       <View style={styles.topRow}>
-        <Text style={[typography.bodySmall, styles.muted]}>Hola, {user?.name ?? ''}</Text>
-        <ConexionBadge estado={conexion} />
-      </View>
-      <Text style={[typography.h1, styles.title]}>Resumen de obras</Text>
-      {error ? <Text style={[typography.bodySmall, styles.error]}>{error}</Text> : null}
-
-      <View style={styles.kpiGrid}>
-        <KpiTile label="Obras activas" value={String(resumen.activas)} />
-        <KpiTile label="Avance promedio" value={`${resumen.avancePromedio}%`} accent={colors.exito} />
-        <KpiTile label="Retrasadas" value={String(resumen.retrasadas)} accent={colors.terracota} />
-        <KpiTile label="Certificando" value={String(resumen.certificando)} />
-      </View>
-
-      <View style={[styles.card, styles.darkCard]}>
-        <Text style={[typography.label, styles.darkLabel]}>CO₂ EVITADO ACUMULADO (MEDIDO)</Text>
-        <Text style={[typography.h1, styles.lima]}>
-          {formatearNumero(resumen.impactoMedido.co2EvitadoKg / 1000, 1)} t
+        <Text style={[typography.h2, styles.title]} numberOfLines={1}>
+          Hola, {user?.name ?? ''}
         </Text>
-        <Text style={[typography.bodySmall, styles.darkLabel]}>
-          {formatearNumero(resumen.impactoMedido.energiaAhorradaKwh)} kWh ahorrados ·{' '}
-          {formatearNumero(resumen.impactoMedido.aguaCaptadaM3)} m³ de agua captada
-        </Text>
+        {can('identity.users:manage') ? <StatusBadge label="Administrador" tone={tones.forest} /> : null}
       </View>
+      {error ? <Notice text={error} tone="error" /> : null}
 
-      {presupuesto ? (
-        <View style={styles.card}>
-          <Text style={[typography.label, styles.muted]}>PRESUPUESTO EJERCIDO</Text>
-          <Text style={[typography.h2, styles.title]}>{presupuesto.porcentajeEjercido}%</Text>
-          <ProgressBar progreso={presupuesto.porcentajeEjercido} />
-          <Text style={[typography.bodySmall, styles.muted]}>
-            {formatearMonto(presupuesto.ejercido, presupuesto.moneda)} de{' '}
-            {formatearMonto(presupuesto.total, presupuesto.moneda)}
-          </Text>
+      {/* La API solo envía `attention` a quien puede actuar sobre esos pendientes. */}
+      {data?.attention ? (
+        <View style={styles.section}>
+          <Text style={[typography.h3, styles.title]}>Requiere tu atención</Text>
+          {data.attention.length === 0 ? <Notice text="Todo al día." /> : null}
+          {data.attention.map((item, index) => {
+            const {title, detail} = attentionText(item);
+            return (
+              <TouchableOpacity
+                key={`${item.kind}-${index}`}
+                style={styles.attentionRow}
+                onPress={() => openAttention(item)}
+                accessibilityRole="button">
+                <View style={styles.attentionText}>
+                  <Text style={[typography.body, styles.attentionTitle]} numberOfLines={1}>
+                    {title}
+                  </Text>
+                  <Text style={[typography.bodySmall, styles.muted]} numberOfLines={2}>
+                    {detail}
+                  </Text>
+                </View>
+                <Text style={styles.chevron}>›</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       ) : null}
 
-      <Text style={[typography.h2, styles.sectionTitle]}>Obras en curso</Text>
-      <View style={styles.list}>
-        {enCurso.map((obra) => (
-          <ObraCard key={obra.id} obra={obra} onPress={() => abrir(obra.id)} />
+      {can('construction.proposals:create') ? (
+        <View style={styles.newProposal}>
+          {/* El formulario de propuestas llega en el Bloque 3. */}
+          <PrimaryButton label="Nueva propuesta" onPress={() => undefined} disabled />
+          <Text style={[typography.bodySmall, styles.muted]}>Disponible próximamente.</Text>
+        </View>
+      ) : null}
+
+      {data ? (
+        <FlatList
+          horizontal
+          data={kpiTiles(data.kpis)}
+          keyExtractor={(kpi) => kpi.key}
+          showsHorizontalScrollIndicator={false}
+          style={styles.carousel}
+          contentContainerStyle={styles.carouselContent}
+          renderItem={({item}) => (
+            <View style={styles.kpi}>
+              <Text style={[typography.h1, styles.kpiValue]}>{item.value}</Text>
+              <Text style={[typography.bodySmall, styles.kpiLabel]}>{item.label}</Text>
+            </View>
+          )}
+        />
+      ) : null}
+
+      <View style={styles.section}>
+        <Text style={[typography.h3, styles.title]}>Obras en curso</Text>
+        {data?.projectsInProgress.map((project) => (
+          <ProjectCard key={project.id} project={project} onPress={() => openProject(project.id)} />
         ))}
-        {!cargando && enCurso.length === 0 ? (
-          <Text style={[typography.body, styles.muted]}>No hay obras en curso.</Text>
-        ) : null}
+        {data && data.projectsInProgress.length === 0 ? <Notice text="No hay obras en curso." /> : null}
       </View>
 
-      <Text style={[typography.h2, styles.sectionTitle]}>Certificaciones en curso</Text>
-      <View style={styles.list}>
-        {resumen.certificacionesEnCurso.map((cert) => (
-          <Text
-            key={cert.obraId}
-            style={[typography.body, styles.certRow]}
-            onPress={() => abrir(cert.obraId)}>
-            <Text style={styles.certTipo}>
-              {cert.tipo} {cert.nivelObjetivo}
-            </Text>
-            {'  '}
-            {cert.obraNombre} · {CERTIFICACION_ESTADO_LABEL[cert.estado]}
-          </Text>
+      <View style={styles.section}>
+        <Text style={[typography.h3, styles.title]}>Certificaciones en proceso</Text>
+        {data?.certificationsInProgress.map((certification) => (
+          <TouchableOpacity
+            key={certification.projectId}
+            style={styles.attentionRow}
+            onPress={() => openProject(certification.projectId)}
+            accessibilityRole="button">
+            <View style={styles.attentionText}>
+              <Text style={[typography.body, styles.attentionTitle]} numberOfLines={1}>
+                {certification.projectName}
+              </Text>
+              <Text style={[typography.bodySmall, styles.muted]}>
+                {[certification.type, certification.level].filter(Boolean).join(' ')} · {certification.requirementsMet} de{' '}
+                {certification.requirementsTotal} requisitos cumplidos
+              </Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
         ))}
-        {resumen.certificacionesEnCurso.length === 0 ? (
-          <Text style={[typography.body, styles.muted]}>Sin certificaciones en curso.</Text>
-        ) : null}
+        {data && data.certificationsInProgress.length === 0 ? <Notice text="Sin certificaciones en proceso." /> : null}
       </View>
     </ScrollView>
   );
 }
 
-function KpiTile({label, value, accent}: {label: string; value: string; accent?: string}): React.ReactElement {
-  return (
-    <View style={styles.kpiTile}>
-      <Text style={[typography.h1, styles.title, accent ? {color: accent} : null]}>{value}</Text>
-      <Text style={[typography.bodySmall, styles.muted]}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: colors.hueso},
-  content: {padding: 20, paddingBottom: 40, gap: 12},
-  topRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
-  muted: {color: colors.piedra},
-  title: {color: colors.negro},
-  error: {color: colors.terracota},
-  kpiGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 12},
-  kpiTile: {
-    flexBasis: '47%',
-    backgroundColor: colors.blanco,
+  screen: {flex: 1, backgroundColor: colors.bone},
+  content: {padding: 20, paddingBottom: 40, gap: 18},
+  topRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12},
+  title: {color: colors.ink, flexShrink: 1},
+  muted: {color: colors.inkSecondary},
+  section: {gap: 10},
+  attentionRow: {
+    minHeight: touchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.linea,
-    borderRadius: 12,
-    padding: 14,
-    gap: 4,
+    borderColor: colors.line,
+    borderRadius: radii.card,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  card: {
-    backgroundColor: colors.blanco,
-    borderWidth: 1,
-    borderColor: colors.linea,
-    borderRadius: 12,
+  attentionText: {flex: 1, gap: 2},
+  attentionTitle: {color: colors.ink, fontWeight: '600'},
+  chevron: {fontSize: 22, color: colors.stone},
+  newProposal: {gap: 6},
+  // El carrusel llega hasta los bordes de la pantalla.
+  carousel: {marginHorizontal: -20},
+  carouselContent: {paddingHorizontal: 20, gap: 12},
+  kpi: {
+    width: 168,
+    backgroundColor: colors.forest,
+    borderRadius: radii.card,
     padding: 16,
     gap: 6,
   },
-  darkCard: {backgroundColor: colors.verdeBosque, borderColor: colors.verdeBosque},
-  darkLabel: {color: '#C9D6CD'},
-  lima: {color: colors.lima},
-  sectionTitle: {color: colors.negro, marginTop: 8},
-  list: {gap: 10},
-  certRow: {
-    color: colors.piedra,
-    backgroundColor: colors.blanco,
-    borderWidth: 1,
-    borderColor: colors.linea,
-    borderRadius: 12,
-    padding: 14,
-  },
-  certTipo: {color: colors.verdeBosqueClaro, fontWeight: '700'},
+  kpiValue: {color: colors.lime},
+  kpiLabel: {color: colors.white},
 });
