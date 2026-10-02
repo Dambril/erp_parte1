@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  Decimal128, type Collection, type Filter, type OptionalUnlessRequiredId, type Document, type Sort, type UpdateFilter,
+  Decimal128, type ClientSession, type Collection, type Filter, type OptionalUnlessRequiredId, type Document, type Sort, type UpdateFilter,
 } from 'mongodb';
 import { decimalToString } from './decimal';
 
@@ -67,8 +67,8 @@ export class TenantRepository<T extends TenantScopedDocument> {
     return { ...filter, tenantId: this.requireTenant(tenantId), deletedAt: null } as Filter<T>;
   }
 
-  async findById(id: string, tenantId?: string): Promise<T | null> {
-    return (await this.collection.findOne(this.scoped(tenantId, { _id: id } as Filter<T>))) as T | null;
+  async findById(id: string, tenantId?: string, session?: ClientSession): Promise<T | null> {
+    return (await this.collection.findOne(this.scoped(tenantId, { _id: id } as Filter<T>), { session })) as T | null;
   }
 
   async findMany(tenantId: string | undefined, filter: Filter<T> = {}, limit = 100): Promise<T[]> {
@@ -89,7 +89,7 @@ export class TenantRepository<T extends TenantScopedDocument> {
     return this.collection.countDocuments(this.scoped(tenantId, filter));
   }
 
-  async insert(document: NewDocument<T>, tenantId?: string): Promise<T> {
+  async insert(document: NewDocument<T>, tenantId?: string, session?: ClientSession): Promise<T> {
     const now = new Date();
     const full = {
       ...document,
@@ -99,7 +99,7 @@ export class TenantRepository<T extends TenantScopedDocument> {
       updatedAt: now,
       deletedAt: null,
     } as unknown as T;
-    await this.collection.insertOne(full as OptionalUnlessRequiredId<T>);
+    await this.collection.insertOne(full as OptionalUnlessRequiredId<T>, { session });
     return full;
   }
 

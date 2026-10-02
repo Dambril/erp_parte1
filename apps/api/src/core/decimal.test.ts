@@ -1,5 +1,5 @@
 import { Decimal128 } from 'mongodb';
-import { Decimal, decimalToString, toDecimal128 } from './decimal';
+import { Decimal, decimalToString, moneyToString, toDecimal128 } from './decimal';
 
 describe('Decimal', () => {
   it('adds 0.1 + 0.2 exactly (a float would give 0.30000000000000004)', () => {
@@ -30,6 +30,14 @@ describe('Decimal', () => {
     expect(decimalToString(toDecimal128('0.30'))).toBe('0.3');
     expect(decimalToString(Decimal128.fromString('-0'))).toBe('0');
     expect(decimalToString(null)).toBeNull();
+  });
+
+  it('formats money with exactly two decimals', () => {
+    expect(moneyToString(Decimal128.fromString('1500'))).toBe('1500.00');
+    expect(moneyToString(Decimal128.fromString('38600000.5'))).toBe('38600000.50');
+    expect(moneyToString(Decimal128.fromString('-0.3'))).toBe('-0.30');
+    expect(moneyToString(Decimal128.fromString('1.0E+2'))).toBe('100.00');
+    expect(moneyToString(Decimal128.fromString('-0'))).toBe('0.00');
   });
 
   it('rejects non-decimal input', () => {

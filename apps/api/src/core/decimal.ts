@@ -92,12 +92,26 @@ export class Decimal {
     return `${negative ? '-' : ''}${integer}${scale > 0 ? `.${fraction}` : ''}`;
   }
 
+  /** Texto con exactamente `places` decimales, truncando los sobrantes: `"1500"` → `"1500.00"`. */
+  toFixed(places: number): string {
+    const units = this.scale >= places ? this.units / 10n ** BigInt(this.scale - places) : this.units * 10n ** BigInt(places - this.scale);
+    const negative = units < 0n;
+    const digits = (negative ? -units : units).toString().padStart(places + 1, '0');
+    const integer = digits.slice(0, digits.length - places);
+    return `${negative ? '-' : ''}${integer}${places > 0 ? `.${digits.slice(digits.length - places)}` : ''}`;
+  }
+
   toDecimal128(): Decimal128 {
     return Decimal128.fromString(this.toString());
   }
 }
 
 export const toDecimal128 = (value: string): Decimal128 => Decimal.parse(value).toDecimal128();
+
+/** Dinero guardado como `Decimal128` → string de la API con dos decimales (`"38600000.00"`). */
+export function moneyToString(value: Decimal128): string {
+  return Decimal.from(value).toFixed(2);
+}
 
 /** Texto canónico de un `Decimal128` guardado (o `null`). */
 export function decimalToString(value: Decimal128): string;
