@@ -8,6 +8,8 @@ export interface RequestUser {
   id: string;
   tenantId: string;
   role: Role;
+  /** Sesión que emitió el access token (`sid`). */
+  sessionId: string;
 }
 
 export interface TenantContext {
@@ -38,7 +40,7 @@ export function authMiddleware(config: ServerConfig): RequestHandler {
     }
     try {
       const claims = verifyAccessToken(token, config);
-      request.user = { id: claims.userId, tenantId: claims.tenantId, role: claims.role };
+      request.user = { id: claims.userId, tenantId: claims.tenantId, role: claims.role, sessionId: claims.sessionId };
       next();
     } catch {
       next(new HttpError(401, 'INVALID_TOKEN', 'Invalid or expired access token'));

@@ -10,7 +10,7 @@ import { authMiddleware } from './core/middlewares/auth';
 import { requestLogger } from './core/middlewares/request-logger';
 import { REALTIME_PATH, type RealtimePublisher } from './core/realtime';
 import { identityRoutes } from './modules/identity/identity.routes';
-import type { Mailer } from './platform/integrations/email';
+import type { EmailSender } from './platform/integrations/email';
 import { catalogsRoutes } from './modules/catalogs/catalogs.routes';
 import { inventoryRoutes } from './modules/inventory/inventory.routes';
 import { obrasRoutes } from './modules/obras/obras.routes';
@@ -23,12 +23,12 @@ function corsOrigin(config: ServerConfig): cors.CorsOptions['origin'] {
 
 /**
  * `publish` difunde los cambios por el canal de tiempo real; sin hub (tests) no hace nada.
- * `mailer` envía los correos de identidad; sin él se usa el de la configuración (Resend, o ninguno sin API key).
+ * `emailSender` envía los correos de identidad; sin él se usa el de la configuración (Resend, o ninguno sin API key).
  */
 export function createApp(
   config: ServerConfig,
   publish: RealtimePublisher = () => undefined,
-  mailer?: Mailer,
+  emailSender?: EmailSender,
 ): express.Express {
   const app = express();
   // Render (y cualquier PaaS) termina TLS en un proxy; sin esto req.ip sería la del proxy y el rate limit sería global.
@@ -51,7 +51,8 @@ export function createApp(
         // Render define RENDER_GIT_COMMIT: permite ver qué commit está desplegado.
         commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? 'local',
         endpoints: [
-          'GET /health', 'POST /auth/login', 'POST /auth/refresh', 'POST /auth/logout', 'GET /auth/me',
+          'GET /health', 'POST /auth/login', 'POST /auth/refresh', 'POST /auth/logout',
+          'POST /auth/password/forgot', 'POST /auth/password/reset', 'POST /auth/invitations/accept', 'GET /me',
           'GET /users', 'POST /users',
           'GET /obras', 'GET /obras/resumen', 'GET /obras/:id', 'POST /obras', 'PATCH /obras/:id', 'DELETE /obras/:id',
           'POST /obras/:id/aprobar', 'POST /obras/:id/solicitar-cambios', 'POST /obras/:id/mediciones',
@@ -77,8 +78,9 @@ export function createApp(
     });
   });
 
-  const identity = identityRoutes(config, mailer);
+  const identity = identityRoutes(config, emailSender);
   app.use('/auth', identity.auth);
+  app.use('/me', identity.me);
   app.use('/users', identity.users);
   app.use('/catalogs', catalogsRoutes());
   app.use('/inventory', inventoryRoutes());

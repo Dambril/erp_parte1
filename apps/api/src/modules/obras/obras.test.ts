@@ -9,9 +9,9 @@ import { createApp } from '../../app';
 import { AUDIT_COLLECTION } from '../../core/audit';
 import { CLOSE_UNAUTHORIZED, RealtimeHub } from '../../core/realtime';
 import { closeDB, connectDB, getDatabase } from '../../config/database';
-import { ensureIdentityIndexes, identityRepositories } from '../identity/identity.repository';
-import { IdentityService } from '../identity/identity.service';
-import { NoopMailer } from '../../platform/integrations/email';
+import { ensureIdentityIndexes } from '../identity/identity.repository';
+import { createIdentityService } from '../identity/identity.routes';
+import { NoopEmailSender } from '../../platform/integrations/email';
 
 const config = {
   nodeEnv: 'test',
@@ -19,8 +19,7 @@ const config = {
   mongodbUri: 'set-in-beforeAll',
   jwtSecret: 'test-access-secret',
   jwtExpiresIn: '15m',
-  jwtRefreshSecret: 'test-refresh-secret',
-  jwtRefreshExpiresIn: '7d',
+  appWebUrl: 'http://web.test',
   defaultTenantId: 'tenant-a',
   corsOrigins: [],
 } satisfies ServerConfig;
@@ -65,8 +64,7 @@ beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await connectDB(mongo.getUri(), 'erp-obras-test');
   await ensureIdentityIndexes(getDatabase());
-  const { users, refreshTokens, passwordResets } = identityRepositories(getDatabase());
-  const identity = new IdentityService(users, refreshTokens, config, passwordResets, new NoopMailer());
+  const identity = createIdentityService(getDatabase(), config, new NoopEmailSender());
   const seed: [keyof typeof tokens, 'manager' | 'user' | 'viewer' | 'admin', string][] = [
     ['manager', 'manager', 'tenant-a'], ['user', 'user', 'tenant-a'], ['viewer', 'viewer', 'tenant-a'], ['otherTenant', 'admin', 'tenant-b'],
   ];

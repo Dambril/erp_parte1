@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { ClientSession, Collection, Db } from 'mongodb';
 
-// ── Bitácora de catálogos e inventario (`audit_logs`) ──────────────
+// ── Bitácora de catálogos, inventario e identidad (`audit_logs`) ───
 
 export const AUDIT_LOGS_COLLECTION = 'audit_logs';
 
-export type AuditAction = 'create' | 'update' | 'delete';
+export type AuditAction = 'create' | 'update' | 'delete' | 'password_reset' | 'invitation_accepted';
 
 /** Bitácora inmutable: quién (`actorId`), qué (`action` sobre `entity`/`entityId`, con estado antes y después) y cuándo. */
 export interface AuditLogDocument {

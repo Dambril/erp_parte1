@@ -1,10 +1,10 @@
+import { createHash, randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { RoleSchema, type Role } from '@erp/domain';
 import type { ServerConfig } from '@erp/config';
 
 const ISSUER = 'erp-api';
 const ACCESS_AUDIENCE = 'erp-access';
-const REFRESH_AUDIENCE = 'erp-refresh';
 
 type ExpiresIn = NonNullable<jwt.SignOptions['expiresIn']>;
 
@@ -12,17 +12,12 @@ export interface AccessTokenClaims {
   userId: string;
   tenantId: string;
   role: Role;
-}
-
-export interface RefreshTokenClaims {
-  tokenId: string;
-  userId: string;
-  tenantId: string;
-  expiresAt: Date;
+  /** Sesión que emitió el token: permite que `/auth/logout` revoque justo esa sesión. */
+  sessionId: string;
 }
 
 export function signAccessToken(claims: AccessTokenClaims, config: ServerConfig): string {
-  return jwt.sign({ tid: claims.tenantId, role: claims.role }, config.jwtSecret, {
+  return jwt.sign({ tenantId: claims.tenantId, role: claims.role, sid: claims.sessionId }, config.jwtSecret, {
     algorithm: 'HS256',
     subject: claims.userId,
     issuer: ISSUER,
@@ -36,34 +31,21 @@ export function verifyAccessToken(token: string, config: ServerConfig): AccessTo
   const payload = jwt.verify(token, config.jwtSecret, {
     algorithms: ['HS256'], issuer: ISSUER, audience: ACCESS_AUDIENCE,
   }) as jwt.JwtPayload;
-  if (typeof payload.sub !== 'string' || typeof payload.tid !== 'string') throw new Error('Malformed access token');
-  return { userId: payload.sub, tenantId: payload.tid, role: RoleSchema.parse(payload.role) };
-}
-
-export function signRefreshToken(
-  claims: Omit<RefreshTokenClaims, 'expiresAt'>,
-  config: ServerConfig,
-): { token: string; expiresAt: Date } {
-  const token = jwt.sign({ tid: claims.tenantId }, config.jwtRefreshSecret, {
-    algorithm: 'HS256',
-    subject: claims.userId,
-    jwtid: claims.tokenId,
-    issuer: ISSUER,
-    audience: REFRESH_AUDIENCE,
-    expiresIn: config.jwtRefreshExpiresIn as ExpiresIn,
-  });
-  const { exp } = jwt.decode(token) as jwt.JwtPayload;
-  return { token, expiresAt: new Date((exp as number) * 1000) };
-}
-
-export function verifyRefreshToken(token: string, config: ServerConfig): RefreshTokenClaims {
-  const payload = jwt.verify(token, config.jwtRefreshSecret, {
-    algorithms: ['HS256'], issuer: ISSUER, audience: REFRESH_AUDIENCE,
-  }) as jwt.JwtPayload;
-  if (typeof payload.sub !== 'string' || typeof payload.tid !== 'string' || typeof payload.jti !== 'string') {
-    throw new Error('Malformed refresh token');
+  if (typeof payload.sub !== 'string' || typeof payload.tenantId !== 'string' || typeof payload.sid !== 'string') {
+    throw new Error('Malformed access token');
   }
-  return {
-    tokenId: payload.jti, userId: payload.sub, tenantId: payload.tid, expiresAt: new Date((payload.exp as number) * 1000),
-  };
+  return { userId: payload.sub, tenantId: payload.tenantId, role: RoleSchema.parse(payload.role), sessionId: payload.sid };
+}
+
+/**
+ * Token opaco de 32 bytes aleatorios (refresh, restablecer contraseña, invitación).
+ * En claro solo lo conoce su destinatario; en la base se guarda `hashToken(token)`.
+ */
+export function generateOpaqueToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** SHA-256 en hexadecimal. Basta un hash rápido sin sal: el token ya tiene 256 bits de entropía. */
+export function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }

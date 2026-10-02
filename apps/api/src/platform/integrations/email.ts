@@ -9,7 +9,7 @@ export interface EmailMessage {
 }
 
 /** Los módulos de negocio dependen de esta interfaz, no de Resend: se puede cambiar de proveedor o simular en pruebas. */
-export interface Mailer {
+export interface EmailSender {
   send(message: EmailMessage): Promise<void>;
 }
 
@@ -17,7 +17,7 @@ export interface Mailer {
 const DEFAULT_FROM = 'ERP <onboarding@resend.dev>';
 
 /** Usa la API HTTPS de Resend (no SMTP), que funciona también en el plan gratuito de Render. */
-export class ResendMailer implements Mailer {
+export class ResendEmailSender implements EmailSender {
   public constructor(private readonly apiKey: string, private readonly from: string) {}
 
   async send({ to, subject, html, text }: EmailMessage): Promise<void> {
@@ -31,22 +31,22 @@ export class ResendMailer implements Mailer {
   }
 }
 
-/** Sin API key (local, pruebas): no envía nada y deja constancia en el log, sin volcar el contenido. */
-export class NoopMailer implements Mailer {
-  async send({ to, subject }: EmailMessage): Promise<void> {
-    logger.debug('Email not sent: RESEND_API_KEY is not configured', { to, subject });
+/** Sin API key (local, pruebas): no envía nada y deja constancia en el log, sin volcar el contenido (lleva tokens). */
+export class NoopEmailSender implements EmailSender {
+  async send({ subject }: EmailMessage): Promise<void> {
+    logger.debug('Email not sent: RESEND_API_KEY is not configured', { subject });
   }
 }
 
-export function createMailer(config: ServerConfig): Mailer {
-  return config.resendApiKey ? new ResendMailer(config.resendApiKey, config.emailFrom ?? DEFAULT_FROM) : new NoopMailer();
+export function createEmailSender(config: ServerConfig): EmailSender {
+  return config.resendApiKey ? new ResendEmailSender(config.resendApiKey, config.emailFrom ?? DEFAULT_FROM) : new NoopEmailSender();
 }
 
-/** Un fallo del proveedor no debe romper la operación del usuario: se registra y se sigue. */
-export async function sendEmailSafely(mailer: Mailer, message: EmailMessage): Promise<void> {
+/** Un fallo del proveedor no debe romper la operación del usuario: se registra (sin destinatario ni contenido) y se sigue. */
+export async function sendEmailSafely(sender: EmailSender, message: EmailMessage): Promise<void> {
   try {
-    await mailer.send(message);
+    await sender.send(message);
   } catch (error) {
-    logger.error('Failed to send email', { to: message.to, subject: message.subject, error: error instanceof Error ? error.message : String(error) });
+    logger.error('Failed to send email', { subject: message.subject, error: error instanceof Error ? error.message : String(error) });
   }
 }

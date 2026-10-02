@@ -1,18 +1,14 @@
 import type { RequestHandler } from 'express';
-import { ROLE_ACTIONS, roleCan, type ModuleAction, type PermissionAction, type PermissionModule, type Role } from '@erp/domain';
+import { roleHasPermission, type ModuleAction, type PermissionAction, type PermissionModule, type Role } from '@erp/domain';
 import { HttpError } from '../http-error';
 
 export type { PermissionAction } from '@erp/domain';
 export interface PermissionRequirement { module: PermissionModule; action: PermissionAction }
 
-// Módulos de administración: solo admin y superadmin, sea cual sea la acción.
-// La matriz de roles (`ROLE_ACTIONS`) vive en @erp/domain para que los clientes oculten lo que el rol no puede hacer.
-const ADMIN_ONLY_MODULES = new Set<PermissionModule>(['users', 'inventory.settings', 'inventory.reconciliation']);
-
+// El mapa de permisos por rol vive en @erp/domain (`roleHasPermission`, `permissionsForRole`):
+// la API lo aplica aquí y `/me` lo entrega a los clientes para que oculten lo que el rol no puede hacer.
 export function can(role: Role, { module, action }: PermissionRequirement): boolean {
-  if (ROLE_ACTIONS[role] === 'all') return true;
-  if (ADMIN_ONLY_MODULES.has(module)) return false;
-  return roleCan(role, action);
+  return roleHasPermission(role, module, action);
 }
 
 /**

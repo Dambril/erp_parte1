@@ -61,10 +61,15 @@ export function roleCan(role: Role, action: PermissionAction): boolean {
   return allowed === 'all' || allowed.includes(action);
 }
 
+/** `invited`: aún no acepta la invitación (no tiene contraseña); `deactivated`: no puede iniciar sesión. */
+export const UserStatusSchema = z.enum(['active', 'invited', 'deactivated']);
+export type UserStatus = z.infer<typeof UserStatusSchema>;
+
 export const UserSchema = BaseDocumentSchema.extend({
   email: z.string().email(),
   name: z.string().min(1),
   role: RoleSchema.default('user'),
+  status: UserStatusSchema.default('active'),
 });
 export type User = z.infer<typeof UserSchema>;
 
@@ -106,7 +111,21 @@ export type ApiResponse<T = unknown> = {
 
 // ── Auth (identity) ────────────────────────────────────────────────
 
-export const PasswordSchema = z.string().min(8, 'Password must be at least 8 characters').max(128);
+/** Longitud en lugar de reglas de composición: se admiten frases; sin exigir mayúsculas, números ni símbolos. */
+export const PASSWORD_MIN_LENGTH = 15;
+export const PASSWORD_MAX_LENGTH = 128;
+export const PasswordSchema = z.string()
+  .min(PASSWORD_MIN_LENGTH, `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`)
+  .max(PASSWORD_MAX_LENGTH, `La contraseña no puede tener más de ${PASSWORD_MAX_LENGTH} caracteres`);
+
+/** Formulario de contraseña nueva (restablecer o activar cuenta): la API solo recibe `password`. */
+export const NewPasswordFormSchema = z.object({
+  password: PasswordSchema,
+  confirmPassword: z.string(),
+}).refine((form) => form.password === form.confirmPassword, {
+  message: 'Las contraseñas no coinciden', path: ['confirmPassword'],
+});
+export type NewPasswordForm = z.infer<typeof NewPasswordFormSchema>;
 
 export const LoginRequestSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -138,12 +157,30 @@ export const ResetPasswordRequestSchema = z.object({
 });
 export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequestSchema>;
 
+/** Misma forma que el restablecimiento: el token llega por correo y la cuenta define su contraseña. */
+export const AcceptInvitationRequestSchema = ResetPasswordRequestSchema;
+export type AcceptInvitationRequest = z.infer<typeof AcceptInvitationRequestSchema>;
+
 export type PublicUser = Omit<User, 'custom'>;
 
 export interface AuthSession {
   accessToken: string;
   refreshToken: string;
   user: PublicUser;
+}
+
+/** Empresa (tenant) a la que pertenece el usuario. */
+export interface Company {
+  id: string;
+  name: string;
+}
+
+/** `GET /me`: lo que los clientes necesitan para decidir qué mostrar. */
+export interface MeResponse {
+  user: PublicUser;
+  company: Company;
+  role: Role;
+  permissions: Permission[];
 }
 
 // ── Decimales (Decimal128 en persistencia, texto en la API) ────────
@@ -209,6 +246,25 @@ export type Permission = { [M in PermissionModule]: `${M}.${ModuleAction<M>}` }[
 
 export const PERMISSIONS: readonly Permission[] = Object.entries(PERMISSION_CATALOG)
   .flatMap(([module, actions]) => actions.map((action) => `${module}.${action}` as Permission));
+
+/** Módulos de administración: solo los roles con `'all'`, sea cual sea la acción. */
+export const ADMIN_ONLY_MODULES: ReadonlySet<PermissionModule> = new Set<PermissionModule>([
+  'users', 'inventory.settings', 'inventory.reconciliation',
+]);
+
+/** Mapa único de permisos por rol: lo aplica la API (`requirePermission`) y lo entrega `/me` a los clientes. */
+export function roleHasPermission(role: Role, module: PermissionModule, action: PermissionAction): boolean {
+  if (ROLE_ACTIONS[role] === 'all') return true;
+  if (ADMIN_ONLY_MODULES.has(module)) return false;
+  return roleCan(role, action);
+}
+
+export function permissionsForRole(role: Role): Permission[] {
+  return PERMISSIONS.filter((permission) => {
+    const separator = permission.lastIndexOf('.');
+    return roleHasPermission(role, permission.slice(0, separator) as PermissionModule, permission.slice(separator + 1) as PermissionAction);
+  });
+}
 
 // ── Catálogos ──────────────────────────────────────────────────────
 

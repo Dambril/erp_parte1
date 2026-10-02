@@ -1,180 +1,208 @@
 import request from 'supertest';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { ServerConfig } from '@erp/config';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { permissionsForRole, type Role, type UserStatus } from '@erp/domain';
 import { createApp } from '../../app';
-import { closeDB, connectDB, getDatabase } from '../../config/database';
-import { ensureIdentityIndexes, identityRepositories } from './identity.repository';
-import { IdentityService } from './identity.service';
-import type { EmailMessage, Mailer } from '../../platform/integrations/email';
-
-const config = {
-  nodeEnv: 'test',
-  port: 0,
-  mongodbUri: 'set-in-beforeAll',
-  jwtSecret: 'test-access-secret',
-  jwtExpiresIn: '15m',
-  jwtRefreshSecret: 'test-refresh-secret',
-  jwtRefreshExpiresIn: '7d',
-  defaultTenantId: 'tenant-a',
-  corsOrigins: [],
-} satisfies ServerConfig;
+import { getDatabase } from '../../config/database';
+import { AUDIT_LOGS_COLLECTION } from '../../core/audit';
+import { startDatabase, stopDatabase, testConfig as config } from '../../test/helpers';
+import type { EmailMessage, EmailSender } from '../../platform/integrations/email';
+import { hashPassword } from './password';
+import { generateOpaqueToken, hashToken } from './tokens';
+import {
+  AUTH_TOKENS_COLLECTION, identityRepositories, migrateIdentityDocuments, SESSIONS_COLLECTION, USERS_COLLECTION, type AuthTokenType,
+} from './identity.repository';
+import { createIdentityService } from './identity.routes';
+import { FORGOT_PASSWORD_MESSAGE } from './identity.controller';
 
 const PASSWORD = 'correct-horse-battery';
-let mongo: MongoMemoryServer;
+const NEW_PASSWORD = 'una frase nueva y bastante larga';
+let replSet: MongoMemoryReplSet;
 let app: ReturnType<typeof createApp>;
 const sent: EmailMessage[] = [];
-const mailer: Mailer = { send: async (message) => { sent.push(message); } };
+const emailSender: EmailSender = { send: async (message) => { sent.push(message); } };
 
-async function seedUser(email: string, role: 'admin' | 'viewer' | 'user', tenantId: string) {
-  const { users, refreshTokens, passwordResets } = identityRepositories(getDatabase());
-  return new IdentityService(users, refreshTokens, config, passwordResets, mailer).createUser({ email, name: email, role, password: PASSWORD }, tenantId);
+async function seedUser(email: string, role: Role, tenantId: string) {
+  return createIdentityService(getDatabase(), config, emailSender).createUser({ email, name: email, role, password: PASSWORD }, tenantId);
 }
 
-async function login(email: string) {
-  const response = await request(app).post('/auth/login').send({ email, password: PASSWORD });
+/** Usuario con un estado concreto, sin pasar por el servicio (las invitaciones se emiten en el Bloque 3). */
+async function insertUser(email: string, status: UserStatus, tenantId = 'tenant-a') {
+  return identityRepositories(getDatabase()).users.insert({
+    email, name: email, role: 'user', status,
+    passwordHash: status === 'invited' ? null : await hashPassword(PASSWORD),
+    failedLoginCount: 0, lockedUntil: null, custom: {},
+  }, tenantId);
+}
+
+async function insertAuthToken(userId: string, type: AuthTokenType, expiresAt = new Date(Date.now() + 60_000), tenantId = 'tenant-a') {
+  const token = generateOpaqueToken();
+  await identityRepositories(getDatabase()).authTokens.createForUser({ tenantId, userId, type, tokenHash: hashToken(token), expiresAt });
+  return token;
+}
+
+async function login(email: string, password = PASSWORD) {
+  const response = await request(app).post('/auth/login').send({ email, password });
   expect(response.status).toBe(200);
   return response.body.data as { accessToken: string; refreshToken: string };
 }
 
+const loginAttempt = (email: string, password: string) => request(app).post('/auth/login').send({ email, password });
+const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
+/** Respuesta sin la marca de tiempo, que cambia en cada petición. */
+const comparable = (response: request.Response) => ({ status: response.status, body: { ...response.body, timestamp: undefined } });
+const tokenFromEmail = (message: EmailMessage) => /\/restablecer\?token=([A-Za-z0-9_-]+)/.exec(message.text)![1]!;
+
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await connectDB(mongo.getUri(), 'erp-test');
-  await ensureIdentityIndexes(getDatabase());
+  replSet = await startDatabase();
+  await identityRepositories(getDatabase()).tenants.ensure('tenant-a', 'Constructora A');
   await seedUser('admin-a@example.com', 'admin', 'tenant-a');
   await seedUser('viewer-a@example.com', 'viewer', 'tenant-a');
   await seedUser('admin-b@example.com', 'admin', 'tenant-b');
 }, 120_000);
 
-// App nueva por test: el rate limit de login cuenta por instancia y aquí se hacen muchos logins.
+// App nueva por test: el rate limit por IP cuenta por instancia y aquí se hacen muchos logins.
 beforeEach(() => {
   sent.length = 0;
-  app = createApp(config, undefined, mailer);
+  app = createApp(config, undefined, emailSender);
 });
 
 afterAll(async () => {
-  await closeDB();
-  await mongo?.stop();
+  await stopDatabase(replSet);
 });
 
 describe('POST /auth/login', () => {
   it('returns tokens and the public user, never the password hash', async () => {
-    const response = await request(app).post('/auth/login').send({ email: 'ADMIN-A@example.com ', password: PASSWORD });
+    const response = await loginAttempt('ADMIN-A@example.com ', PASSWORD);
     expect(response.status).toBe(200);
     expect(response.body.data.accessToken).toEqual(expect.any(String));
-    expect(response.body.data.user).toMatchObject({ email: 'admin-a@example.com', role: 'admin', tenantId: 'tenant-a' });
+    expect(response.body.data.refreshToken).toEqual(expect.any(String));
+    expect(response.body.data.user).toMatchObject({ email: 'admin-a@example.com', role: 'admin', status: 'active', tenantId: 'tenant-a' });
     expect(response.body.data.user.passwordHash).toBeUndefined();
+    expect(response.body.data.user.failedLoginCount).toBeUndefined();
     expect(response.body.data.user._id).toBeUndefined();
   });
 
-  it('rejects a wrong password and an unknown email with the same error', async () => {
-    const wrongPassword = await request(app).post('/auth/login').send({ email: 'admin-a@example.com', password: 'nope-nope' });
-    const unknownEmail = await request(app).post('/auth/login').send({ email: 'ghost@example.com', password: PASSWORD });
+  it('puts sub, tenantId and role in a 15-minute access token', async () => {
+    const { accessToken } = await login('viewer-a@example.com');
+    const payload = JSON.parse(Buffer.from(accessToken.split('.')[1]!, 'base64url').toString()) as Record<string, unknown>;
+    expect(payload).toMatchObject({ tenantId: 'tenant-a', role: 'viewer', sub: expect.any(String), sid: expect.any(String) });
+    expect((payload.exp as number) - (payload.iat as number)).toBe(15 * 60);
+  });
+
+  it('answers an unknown email and a wrong password with exactly the same response', async () => {
+    const wrongPassword = await loginAttempt('viewer-a@example.com', 'contraseña equivocada');
+    const unknownEmail = await loginAttempt('ghost@example.com', PASSWORD);
     expect(wrongPassword.status).toBe(401);
-    expect(unknownEmail.status).toBe(401);
-    expect(wrongPassword.body.error.code).toBe('INVALID_CREDENTIALS');
-    expect(unknownEmail.body.error.code).toBe('INVALID_CREDENTIALS');
+    expect(wrongPassword.body.error).toEqual({ code: 'INVALID_CREDENTIALS', message: 'Correo o contraseña incorrectos' });
+    expect(comparable(unknownEmail)).toEqual(comparable(wrongPassword));
+  });
+
+  it('does not let a deactivated or invited account in, with the same response', async () => {
+    await insertUser('deactivated@example.com', 'deactivated');
+    await insertUser('invited@example.com', 'invited');
+    const reference = await loginAttempt('ghost@example.com', PASSWORD);
+    expect(comparable(await loginAttempt('deactivated@example.com', PASSWORD))).toEqual(comparable(reference));
+    expect(comparable(await loginAttempt('invited@example.com', PASSWORD))).toEqual(comparable(reference));
+  });
+
+  it('locks the account for 5 minutes on the sixth consecutive failure, even with the right password', async () => {
+    await seedUser('locked@example.com', 'user', 'tenant-a');
+    for (let i = 0; i < 5; i++) expect((await loginAttempt('locked@example.com', 'contraseña equivocada')).status).toBe(401);
+
+    const sixth = await loginAttempt('locked@example.com', 'contraseña equivocada');
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.error.code).toBe('TOO_MANY_ATTEMPTS');
+    expect((await loginAttempt('locked@example.com', PASSWORD)).status).toBe(429);
+
+    const user = await getDatabase().collection(USERS_COLLECTION).findOne({ email: 'locked@example.com' });
+    const lockMs = (user!.lockedUntil as Date).getTime() - Date.now();
+    expect(lockMs).toBeGreaterThan(4 * 60_000);
+    expect(lockMs).toBeLessThanOrEqual(5 * 60_000);
+
+    // Pasado el bloqueo, la contraseña correcta vuelve a entrar.
+    await getDatabase().collection(USERS_COLLECTION).updateOne({ email: 'locked@example.com' }, { $set: { lockedUntil: new Date(Date.now() - 1000) } });
+    await login('locked@example.com');
+  });
+
+  it('resets the failure counter after a successful login', async () => {
+    await seedUser('counter@example.com', 'user', 'tenant-a');
+    for (let i = 0; i < 4; i++) expect((await loginAttempt('counter@example.com', 'contraseña equivocada')).status).toBe(401);
+    await login('counter@example.com');
+    for (let i = 0; i < 4; i++) expect((await loginAttempt('counter@example.com', 'contraseña equivocada')).status).toBe(401);
+    await login('counter@example.com');
   });
 
   it('rate-limits repeated attempts from the same IP', async () => {
-    const attempt = () => request(app).post('/auth/login').send({ email: 'admin-a@example.com', password: 'wrong-pass' });
+    const attempt = () => loginAttempt('ghost@example.com', 'contraseña equivocada');
     for (let i = 0; i < 10; i++) expect((await attempt()).status).toBe(401);
     const blocked = await attempt();
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('TOO_MANY_REQUESTS');
   });
 
-  it('validates the body', async () => {
+  it('rejects an invalid body with VALIDATION_ERROR in the uniform format', async () => {
     const response = await request(app).post('/auth/login').send({ email: 'not-an-email' });
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request',
+        details: expect.arrayContaining([
+          { field: 'email', message: expect.any(String), code: expect.any(String) },
+          { field: 'password', message: expect.any(String), code: expect.any(String) },
+        ]),
+      },
+      timestamp: expect.any(String),
+      path: '/auth/login',
+    });
   });
 });
 
-describe('authentication and tenant isolation', () => {
-  it('requires a token for protected routes', async () => {
-    expect((await request(app).get('/auth/me')).status).toBe(401);
-    expect((await request(app).get('/users')).status).toBe(401);
-  });
-
-  it('rejects an invalid token', async () => {
-    const response = await request(app).get('/auth/me').set('Authorization', 'Bearer not-a-jwt');
-    expect(response.status).toBe(401);
-    expect(response.body.error.code).toBe('INVALID_TOKEN');
-  });
-
-  it('returns the current user', async () => {
-    const { accessToken } = await login('admin-a@example.com');
-    const response = await request(app).get('/auth/me').set('Authorization', `Bearer ${accessToken}`);
-    expect(response.status).toBe(200);
-    expect(response.body.data.email).toBe('admin-a@example.com');
-  });
-
-  it('only lists users of the token tenant and ignores an X-Tenant-Id header', async () => {
-    const { accessToken } = await login('admin-a@example.com');
-    const response = await request(app)
-      .get('/users')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .set('X-Tenant-Id', 'tenant-b');
-    expect(response.status).toBe(200);
-    const emails = response.body.data.map((user: { email: string }) => user.email).sort();
-    expect(emails).toEqual(['admin-a@example.com', 'viewer-a@example.com']);
-  });
-});
-
-describe('POST /users', () => {
-  it('lets an admin create a user in their own tenant', async () => {
-    const { accessToken } = await login('admin-a@example.com');
-    const response = await request(app).post('/users').set('Authorization', `Bearer ${accessToken}`)
-      .send({ email: 'new-a@example.com', name: 'Nuevo', password: 'another-password', tenantId: 'tenant-b' });
-    expect(response.status).toBe(201);
-    expect(response.body.data).toMatchObject({ email: 'new-a@example.com', role: 'user', tenantId: 'tenant-a' });
-  });
-
-  it('forbids a viewer', async () => {
-    const { accessToken } = await login('viewer-a@example.com');
-    const response = await request(app).post('/users').set('Authorization', `Bearer ${accessToken}`)
-      .send({ email: 'x@example.com', name: 'X', password: 'another-password' });
-    expect(response.status).toBe(403);
-  });
-
-  it('forbids an admin from creating a superadmin', async () => {
-    const { accessToken } = await login('admin-a@example.com');
-    const response = await request(app).post('/users').set('Authorization', `Bearer ${accessToken}`)
-      .send({ email: 'root@example.com', name: 'Root', role: 'superadmin', password: 'another-password' });
-    expect(response.status).toBe(403);
-  });
-
-  it('rejects a duplicated email', async () => {
-    const { accessToken } = await login('admin-a@example.com');
-    const response = await request(app).post('/users').set('Authorization', `Bearer ${accessToken}`)
-      .send({ email: 'admin-b@example.com', name: 'Dup', password: 'another-password' });
-    expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe('EMAIL_TAKEN');
-  });
-});
-
-describe('refresh tokens', () => {
-  it('rotates the refresh token', async () => {
-    const first = await login('admin-a@example.com');
-    const response = await request(app).post('/auth/refresh').send({ refreshToken: first.refreshToken });
-    expect(response.status).toBe(200);
-    expect(response.body.data.refreshToken).not.toBe(first.refreshToken);
-  });
-
-  it('detects reuse of a rotated token and revokes every session', async () => {
+describe('sessions', () => {
+  it('refresh rotates the token and the previous one no longer works', async () => {
     const first = await login('admin-a@example.com');
     const rotated = await request(app).post('/auth/refresh').send({ refreshToken: first.refreshToken });
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.data.refreshToken).not.toBe(first.refreshToken);
+    expect(rotated.body.data.accessToken).toEqual(expect.any(String));
+
     const reuse = await request(app).post('/auth/refresh').send({ refreshToken: first.refreshToken });
     expect(reuse.status).toBe(401);
     expect(reuse.body.error.code).toBe('REFRESH_TOKEN_REUSED');
-    const afterRevoke = await request(app).post('/auth/refresh').send({ refreshToken: rotated.body.data.refreshToken });
-    expect(afterRevoke.status).toBe(401);
+    // Reutilizar un token rotado se trata como robo: también se revoca la sesión nueva.
+    expect((await request(app).post('/auth/refresh').send({ refreshToken: rotated.body.data.refreshToken })).status).toBe(401);
   });
 
-  it('logout revokes the refresh token', async () => {
-    const { refreshToken } = await login('viewer-a@example.com');
-    expect((await request(app).post('/auth/logout').send({ refreshToken })).status).toBe(204);
-    expect((await request(app).post('/auth/refresh').send({ refreshToken })).status).toBe(401);
+  it('stores only the SHA-256 of the refresh token', async () => {
+    const { refreshToken } = await login('admin-a@example.com');
+    const sessions = getDatabase().collection(SESSIONS_COLLECTION);
+    expect(await sessions.findOne({ refreshTokenHash: refreshToken })).toBeNull();
+    const stored = await sessions.findOne({ refreshTokenHash: hashToken(refreshToken) });
+    expect(stored).toMatchObject({ tenantId: 'tenant-a', revokedAt: null, custom: {} });
+    const days = ((stored!.expiresAt as Date).getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(29.9);
+    expect(days).toBeLessThanOrEqual(30);
+  });
+
+  it('logout revokes the current session only', async () => {
+    const current = await login('viewer-a@example.com');
+    const other = await login('viewer-a@example.com');
+    expect((await request(app).post('/auth/logout').set(bearer(current.accessToken))).status).toBe(204);
+    expect((await request(app).post('/auth/refresh').send({ refreshToken: current.refreshToken })).status).toBe(401);
+    expect((await request(app).post('/auth/refresh').send({ refreshToken: other.refreshToken })).status).toBe(200);
+  });
+
+  it('a logged-out refresh token is just invalid, not treated as theft', async () => {
+    const current = await login('viewer-a@example.com');
+    await request(app).post('/auth/logout').set(bearer(current.accessToken));
+    const response = await request(app).post('/auth/refresh').send({ refreshToken: current.refreshToken });
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('INVALID_REFRESH_TOKEN');
+  });
+
+  it('logout requires authentication', async () => {
+    expect((await request(app).post('/auth/logout')).status).toBe(401);
   });
 
   it('does not accept an access token as a refresh token', async () => {
@@ -183,63 +211,216 @@ describe('refresh tokens', () => {
   });
 });
 
-describe('unknown routes', () => {
-  it('returns a JSON 404', async () => {
-    const response = await request(app).get('/does-not-exist');
-    expect(response.status).toBe(404);
-    expect(response.body.error.code).toBe('NOT_FOUND');
+describe('password recovery', () => {
+  it('forgot answers the same for known and unknown emails and only emails the known one', async () => {
+    await seedUser('recover@example.com', 'user', 'tenant-a');
+    sent.length = 0;
+
+    const known = await request(app).post('/auth/password/forgot').send({ email: 'recover@example.com' });
+    expect(sent).toHaveLength(1);
+    const unknown = await request(app).post('/auth/password/forgot').send({ email: 'nobody@example.com' });
+    expect(sent).toHaveLength(1);
+
+    expect(known.status).toBe(202);
+    expect(known.body.data).toEqual({ message: FORGOT_PASSWORD_MESSAGE });
+    expect(comparable(unknown)).toEqual(comparable(known));
+
+    const [email] = sent;
+    expect(email).toMatchObject({ to: 'recover@example.com', subject: 'Restablece tu contraseña' });
+    expect(email!.html).toContain('Restablecer contraseña');
+    expect(email!.html).toContain('Si no lo pediste, ignora este correo.');
+    expect(email!.html).toContain(`${config.appWebUrl}/restablecer?token=`);
+  });
+
+  it('does not email deactivated accounts', async () => {
+    await insertUser('gone@example.com', 'deactivated');
+    expect((await request(app).post('/auth/password/forgot').send({ email: 'gone@example.com' })).status).toBe(202);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('reset works once, revokes existing sessions, is audited and does not log in', async () => {
+    const user = await seedUser('reset@example.com', 'user', 'tenant-a');
+    const { refreshToken } = await login('reset@example.com');
+    sent.length = 0;
+    await request(app).post('/auth/password/forgot').send({ email: 'reset@example.com' });
+    const token = tokenFromEmail(sent[0]!);
+
+    const reset = await request(app).post('/auth/password/reset').send({ token, password: NEW_PASSWORD });
+    expect(reset.status).toBe(204);
+    expect(reset.body).toEqual({});
+
+    expect((await loginAttempt('reset@example.com', PASSWORD)).status).toBe(401);
+    await login('reset@example.com', NEW_PASSWORD);
+    expect((await request(app).post('/auth/refresh').send({ refreshToken })).status).toBe(401);
+
+    const again = await request(app).post('/auth/password/reset').send({ token, password: 'otra frase distinta y larga' });
+    expect(again.status).toBe(400);
+    expect(again.body.error.code).toBe('INVALID_TOKEN');
+
+    const audit = await getDatabase().collection(AUDIT_LOGS_COLLECTION).findOne({ entityId: user.id, action: 'password_reset' });
+    expect(audit).toMatchObject({ tenantId: 'tenant-a', actorId: user.id, entity: 'user' });
+    expect(JSON.stringify(audit)).not.toMatch(/scrypt/);
+  });
+
+  it('reset rejects an expired token', async () => {
+    const user = await seedUser('expired@example.com', 'user', 'tenant-a');
+    const token = await insertAuthToken(user.id, 'password_reset', new Date(Date.now() - 1000));
+    const response = await request(app).post('/auth/password/reset').send({ token, password: NEW_PASSWORD });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_TOKEN');
+    await login('expired@example.com');
+  });
+
+  it('reset rejects an invented token, an invitation token and a short password', async () => {
+    const user = await seedUser('wrong-type@example.com', 'user', 'tenant-a');
+    const invitation = await insertAuthToken(user.id, 'invitation');
+    expect((await request(app).post('/auth/password/reset').send({ token: 'invented', password: NEW_PASSWORD })).body.error.code).toBe('INVALID_TOKEN');
+    expect((await request(app).post('/auth/password/reset').send({ token: invitation, password: NEW_PASSWORD })).body.error.code).toBe('INVALID_TOKEN');
+    const short = await request(app).post('/auth/password/reset').send({ token: 'invented', password: 'catorce chars!' });
+    expect(short.status).toBe(400);
+    expect(short.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('a new request invalidates the previous link', async () => {
+    await seedUser('twice@example.com', 'user', 'tenant-a');
+    await request(app).post('/auth/password/forgot').send({ email: 'twice@example.com' });
+    const first = tokenFromEmail(sent.at(-1)!);
+    await request(app).post('/auth/password/forgot').send({ email: 'twice@example.com' });
+    expect((await request(app).post('/auth/password/reset').send({ token: first, password: NEW_PASSWORD })).status).toBe(400);
+    expect((await request(app).post('/auth/password/reset').send({ token: tokenFromEmail(sent.at(-1)!), password: NEW_PASSWORD })).status).toBe(204);
+  });
+
+  it('stores only the hash of the token', async () => {
+    await seedUser('hash-only@example.com', 'user', 'tenant-a');
+    await request(app).post('/auth/password/forgot').send({ email: 'hash-only@example.com' });
+    const token = tokenFromEmail(sent.at(-1)!);
+    const tokens = getDatabase().collection(AUTH_TOKENS_COLLECTION);
+    expect(await tokens.findOne({ tokenHash: token })).toBeNull();
+    const stored = await tokens.findOne({ tokenHash: hashToken(token) });
+    expect(stored).toMatchObject({ type: 'password_reset', usedAt: null, tenantId: 'tenant-a' });
+    const minutes = ((stored!.expiresAt as Date).getTime() - Date.now()) / 60_000;
+    expect(minutes).toBeGreaterThan(59);
+    expect(minutes).toBeLessThanOrEqual(60);
   });
 });
 
-describe('emails', () => {
+describe('POST /auth/invitations/accept', () => {
+  it('activates the invited account with the new password', async () => {
+    const user = await insertUser('guest@example.com', 'invited');
+    const token = await insertAuthToken(user._id, 'invitation');
+
+    expect((await request(app).post('/auth/invitations/accept').send({ token, password: NEW_PASSWORD })).status).toBe(204);
+    const { accessToken } = await login('guest@example.com', NEW_PASSWORD);
+    const me = await request(app).get('/me').set(bearer(accessToken));
+    expect(me.body.data.user.status).toBe('active');
+
+    const again = await request(app).post('/auth/invitations/accept').send({ token, password: NEW_PASSWORD });
+    expect(again.status).toBe(400);
+    expect(again.body.error.code).toBe('INVALID_TOKEN');
+    expect(await getDatabase().collection(AUDIT_LOGS_COLLECTION).findOne({ entityId: user._id, action: 'invitation_accepted' })).not.toBeNull();
+  });
+
+  it('rejects expired invitations and password-reset tokens', async () => {
+    const user = await insertUser('late@example.com', 'invited');
+    const expired = await insertAuthToken(user._id, 'invitation', new Date(Date.now() - 1000));
+    expect((await request(app).post('/auth/invitations/accept').send({ token: expired, password: NEW_PASSWORD })).status).toBe(400);
+    const reset = await insertAuthToken(user._id, 'password_reset');
+    expect((await request(app).post('/auth/invitations/accept').send({ token: reset, password: NEW_PASSWORD })).status).toBe(400);
+    expect((await loginAttempt('late@example.com', NEW_PASSWORD)).status).toBe(401);
+  });
+});
+
+describe('GET /me', () => {
+  it('requires a valid token', async () => {
+    expect((await request(app).get('/me')).status).toBe(401);
+    const invalid = await request(app).get('/me').set(bearer('not-a-jwt'));
+    expect(invalid.status).toBe(401);
+    expect(invalid.body.error.code).toBe('INVALID_TOKEN');
+  });
+
+  it.each<[string, Role]>([['admin-a@example.com', 'admin'], ['viewer-a@example.com', 'viewer']])(
+    'returns the user, company, role and the permissions of the role (%s)',
+    async (email, role) => {
+      const { accessToken } = await login(email);
+      const response = await request(app).get('/me').set(bearer(accessToken));
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual({
+        user: expect.objectContaining({ email, role, tenantId: 'tenant-a' }),
+        company: { id: 'tenant-a', name: 'Constructora A' },
+        role,
+        permissions: permissionsForRole(role),
+      });
+    },
+  );
+
+  it('gives a viewer only read permissions and no admin modules', async () => {
+    const { accessToken } = await login('viewer-a@example.com');
+    const { permissions } = (await request(app).get('/me').set(bearer(accessToken))).body.data as { permissions: string[] };
+    expect(permissions).toContain('obras.read');
+    expect(permissions).not.toContain('obras.create');
+    expect(permissions).not.toContain('users.read');
+  });
+
+  it('falls back to the tenant id when the company has no record', async () => {
+    const { accessToken } = await login('admin-b@example.com');
+    const response = await request(app).get('/me').set(bearer(accessToken));
+    expect(response.body.data.company).toEqual({ id: 'tenant-b', name: 'tenant-b' });
+  });
+});
+
+describe('users and tenant isolation', () => {
+  it('only lists users of the token tenant and ignores an X-Tenant-Id header', async () => {
+    const { accessToken } = await login('admin-b@example.com');
+    const response = await request(app).get('/users').set(bearer(accessToken)).set('X-Tenant-Id', 'tenant-a');
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((user: { email: string }) => user.email)).toEqual(['admin-b@example.com']);
+  });
+
+  it('lets an admin create a user in their own tenant', async () => {
+    const { accessToken } = await login('admin-a@example.com');
+    const response = await request(app).post('/users').set(bearer(accessToken))
+      .send({ email: 'new-a@example.com', name: 'Nuevo', password: NEW_PASSWORD, tenantId: 'tenant-b' });
+    expect(response.status).toBe(201);
+    expect(response.body.data).toMatchObject({ email: 'new-a@example.com', role: 'user', status: 'active', tenantId: 'tenant-a' });
+  });
+
+  it('forbids a viewer and an admin creating a superadmin, and rejects duplicated emails', async () => {
+    const viewer = await login('viewer-a@example.com');
+    expect((await request(app).post('/users').set(bearer(viewer.accessToken)).send({ email: 'x@example.com', name: 'X', password: NEW_PASSWORD })).status).toBe(403);
+    const admin = await login('admin-a@example.com');
+    expect((await request(app).post('/users').set(bearer(admin.accessToken))
+      .send({ email: 'root@example.com', name: 'Root', role: 'superadmin', password: NEW_PASSWORD })).status).toBe(403);
+    const duplicated = await request(app).post('/users').set(bearer(admin.accessToken)).send({ email: 'admin-b@example.com', name: 'Dup', password: NEW_PASSWORD });
+    expect(duplicated.status).toBe(409);
+    expect(duplicated.body.error.code).toBe('EMAIL_TAKEN');
+  });
+
   it('sends a welcome email when a user is created, without the password', async () => {
     await seedUser('welcome@example.com', 'user', 'tenant-a');
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ to: 'welcome@example.com', subject: 'Tu cuenta fue creada' });
     expect(sent[0]!.text + sent[0]!.html).not.toContain(PASSWORD);
   });
+});
 
-  describe('password reset', () => {
-    const NEW_PASSWORD = 'a-brand-new-password';
-    const tokenFromEmail = () => /código de restablecimiento es: (\S+)/.exec(sent[0]!.text)![1]!;
-
-    it('answers the same for unknown emails and sends nothing', async () => {
-      const response = await request(app).post('/auth/forgot-password').send({ email: 'nobody@example.com' });
-      expect(response.status).toBe(202);
-      expect(sent).toHaveLength(0);
+describe('legacy users', () => {
+  it('migrates users without status so they keep logging in', async () => {
+    const db = getDatabase();
+    await db.collection(USERS_COLLECTION).insertOne({
+      _id: 'legacy-user' as never, tenantId: 'tenant-a', email: 'legacy@example.com', name: 'Legacy', role: 'user',
+      passwordHash: await hashPassword(PASSWORD), createdAt: new Date(), updatedAt: new Date(), deletedAt: null,
     });
+    await migrateIdentityDocuments(db);
+    expect(await db.collection(USERS_COLLECTION).findOne({ email: 'legacy@example.com' }))
+      .toMatchObject({ status: 'active', failedLoginCount: 0, lockedUntil: null, custom: {} });
+    await login('legacy@example.com');
+  });
+});
 
-    it('resets the password once, revokes sessions and rejects a reused token', async () => {
-      await seedUser('reset@example.com', 'user', 'tenant-a');
-      const { refreshToken } = await login('reset@example.com');
-      sent.length = 0;
-
-      expect((await request(app).post('/auth/forgot-password').send({ email: 'reset@example.com' })).status).toBe(202);
-      expect(sent).toHaveLength(1);
-      expect(sent[0]!.to).toBe('reset@example.com');
-      const token = tokenFromEmail();
-
-      expect((await request(app).post('/auth/reset-password').send({ token, password: NEW_PASSWORD })).status).toBe(204);
-      expect((await request(app).post('/auth/login').send({ email: 'reset@example.com', password: PASSWORD })).status).toBe(401);
-      expect((await request(app).post('/auth/login').send({ email: 'reset@example.com', password: NEW_PASSWORD })).status).toBe(200);
-      expect((await request(app).post('/auth/refresh').send({ refreshToken })).status).toBe(401);
-
-      const reuse = await request(app).post('/auth/reset-password').send({ token, password: 'another-password-1' });
-      expect(reuse.status).toBe(400);
-      expect(reuse.body.error.code).toBe('INVALID_RESET_TOKEN');
-    });
-
-    it('rejects an invented token and a weak password', async () => {
-      expect((await request(app).post('/auth/reset-password').send({ token: 'invented', password: NEW_PASSWORD })).status).toBe(400);
-      expect((await request(app).post('/auth/reset-password').send({ token: 'invented', password: 'short' })).status).toBe(400);
-    });
-
-    it('invalidates the previous token when a new one is requested', async () => {
-      await seedUser('twice@example.com', 'user', 'tenant-a');
-      await request(app).post('/auth/forgot-password').send({ email: 'twice@example.com' });
-      const first = /código de restablecimiento es: (\S+)/.exec(sent.at(-1)!.text)![1]!;
-      await request(app).post('/auth/forgot-password').send({ email: 'twice@example.com' });
-      expect((await request(app).post('/auth/reset-password').send({ token: first, password: NEW_PASSWORD })).status).toBe(400);
-    });
+describe('unknown routes', () => {
+  it('returns a JSON 404', async () => {
+    const response = await request(app).get('/does-not-exist');
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('NOT_FOUND');
   });
 });
