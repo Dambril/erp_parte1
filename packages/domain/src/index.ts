@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { CustomFieldsSchema, PaginationQuerySchema, RoleSchema, type Paginated, type Role } from './common';
+import type { Permission } from './permissions';
+
+export * from './common';
+export * from './permissions';
 
 // ── Money (Decimal128 representation) ──────────────────────────────
 
@@ -30,36 +35,7 @@ export const BaseDocumentSchema = z.object({
 });
 export type BaseDocument = z.infer<typeof BaseDocumentSchema>;
 
-// ── Role & User ────────────────────────────────────────────────────
-
-export const RoleSchema = z.enum(['superadmin', 'admin', 'manager', 'user', 'viewer']);
-export type Role = z.infer<typeof RoleSchema>;
-
-export const ROLE_LABEL: Record<Role, string> = {
-  superadmin: 'Superadministrador',
-  admin: 'Administrador',
-  manager: 'Gerente de proyecto',
-  user: 'Residente de obra',
-  viewer: 'Consulta',
-};
-
-// ── Permisos (RBAC) ────────────────────────────────────────────────
-// Compartidos para que la API los aplique y los clientes oculten lo que el rol no puede hacer.
-
-export type PermissionAction = 'read' | 'create' | 'update' | 'delete' | 'approve';
-
-export const ROLE_ACTIONS: Record<Role, readonly PermissionAction[] | 'all'> = {
-  superadmin: 'all',
-  admin: 'all',
-  manager: ['read', 'create', 'update', 'approve'],
-  user: ['read', 'create'],
-  viewer: ['read'],
-};
-
-export function roleCan(role: Role, action: PermissionAction): boolean {
-  const allowed = ROLE_ACTIONS[role];
-  return allowed === 'all' || allowed.includes(action);
-}
+// ── User ───────────────────────────────────────────────────────────
 
 /** `invited`: aún no acepta la invitación (no tiene contraseña); `deactivated`: no puede iniciar sesión. */
 export const UserStatusSchema = z.enum(['active', 'invited', 'deactivated']);
@@ -194,85 +170,11 @@ export const PositiveDecimalSchema = DecimalStringSchema
 export const NonZeroDecimalSchema = DecimalStringSchema.refine((value) => /[1-9]/.test(value), 'Must not be zero');
 export type DecimalString = string;
 
-// ── Paginación ─────────────────────────────────────────────────────
-
-export const PaginationQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  q: z.string().trim().min(1).max(100).optional(),
-});
-export type PaginationQuery = z.infer<typeof PaginationQuerySchema>;
-
-export interface Paginated<T> {
-  items: T[];
-  page: number;
-  pageSize: number;
-  total: number;
-}
-
-// ── Permisos ───────────────────────────────────────────────────────
-
-export const PermissionActionSchema = z.enum(['read', 'create', 'update', 'delete', 'approve']) satisfies z.ZodType<PermissionAction>;
-
-const CRUD = ['read', 'create', 'update', 'delete'] as const;
-
-/**
- * Catálogo (seed) de permisos por módulo y acción: `catalogs.product.create`, `inventory.reversal.create`, etc.
- * `requirePermission` solo acepta combinaciones de esta lista; qué rol tiene cada acción lo decide `ROLE_ACTIONS`.
- */
-export const PERMISSION_CATALOG = {
-  users: ['read', 'create'],
-  obras: ['read', 'create', 'update', 'delete', 'approve'],
-  'catalogs.unit': CRUD,
-  'catalogs.tax': CRUD,
-  'catalogs.currency': CRUD,
-  'catalogs.category': CRUD,
-  'catalogs.product': CRUD,
-  'catalogs.customer': CRUD,
-  'catalogs.supplier': CRUD,
-  'catalogs.warehouse': CRUD,
-  'inventory.movement': ['read', 'create'],
-  'inventory.transfer': ['create'],
-  'inventory.reversal': ['create'],
-  'inventory.stock': ['read'],
-  'inventory.lot': ['read', 'create'],
-  'inventory.settings': ['read', 'update'],
-  'inventory.reconciliation': ['read'],
-} as const satisfies Record<string, readonly PermissionAction[]>;
-
-export type PermissionModule = keyof typeof PERMISSION_CATALOG;
-export type ModuleAction<M extends PermissionModule> = (typeof PERMISSION_CATALOG)[M][number];
-export type Permission = { [M in PermissionModule]: `${M}.${ModuleAction<M>}` }[PermissionModule];
-
-export const PERMISSIONS: readonly Permission[] = Object.entries(PERMISSION_CATALOG)
-  .flatMap(([module, actions]) => actions.map((action) => `${module}.${action}` as Permission));
-
-/** Módulos de administración: solo los roles con `'all'`, sea cual sea la acción. */
-export const ADMIN_ONLY_MODULES: ReadonlySet<PermissionModule> = new Set<PermissionModule>([
-  'users', 'inventory.settings', 'inventory.reconciliation',
-]);
-
-/** Mapa único de permisos por rol: lo aplica la API (`requirePermission`) y lo entrega `/me` a los clientes. */
-export function roleHasPermission(role: Role, module: PermissionModule, action: PermissionAction): boolean {
-  if (ROLE_ACTIONS[role] === 'all') return true;
-  if (ADMIN_ONLY_MODULES.has(module)) return false;
-  return roleCan(role, action);
-}
-
-export function permissionsForRole(role: Role): Permission[] {
-  return PERMISSIONS.filter((permission) => {
-    const separator = permission.lastIndexOf('.');
-    return roleHasPermission(role, permission.slice(0, separator) as PermissionModule, permission.slice(separator + 1) as PermissionAction);
-  });
-}
-
 // ── Catálogos ──────────────────────────────────────────────────────
 
 const IdSchema = z.string().uuid();
 const CodeSchema = z.string().trim().min(1).max(50);
 const NameSchema = z.string().trim().min(1).max(200);
-/** Campos configurables por cliente; nunca se modifica el núcleo por un cliente. */
-export const CustomFieldsSchema = z.record(z.unknown());
 
 /** Forma de un registro de catálogo en la API: campos base + los propios de la entidad (que incluyen `custom`). */
 export type CatalogRecord<T> = Omit<BaseDocument, 'custom'> & T;
@@ -562,3 +464,4 @@ export interface ReconciliationReport {
   differences: ReconciliationDifference[];
 }
 export * from './obras';
+export * from './construction';

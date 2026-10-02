@@ -68,6 +68,7 @@ export class ObrasStore {
   }
 
   aplicar(event: RealtimeEvent): void {
+    if (event.type === 'construction.changed') return;
     if (event.type === 'obra.delete') {
       this.set({ obras: this.state.obras.filter((obra) => obra.id !== event.id) });
       return;

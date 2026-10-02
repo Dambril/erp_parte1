@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ConstructionChangedEvent } from './construction';
 
 // ── Etapas (persistidas) y estados (derivados) ─────────────────────
 // La etapa la cambian las decisiones (aprobar / solicitar cambios). El estado que ven los
@@ -165,7 +166,8 @@ export interface Obra {
 
 export type RealtimeEvent =
   | { type: 'obra.upsert'; obra: Obra }
-  | { type: 'obra.delete'; id: string };
+  | { type: 'obra.delete'; id: string }
+  | ConstructionChangedEvent;
 
 // ── Reglas de negocio compartidas ──────────────────────────────────
 
