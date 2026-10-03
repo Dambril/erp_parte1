@@ -26,7 +26,8 @@ La web (React + Vite) conserva solo el acceso; las pantallas de construcción es
 
 `ROLE_PERMISSIONS` (en `packages/domain`) es un mapa explícito de rol a permisos para `construction.*` e `identity.*`.
 Hay dos perfiles: `admin` (lo hereda `superadmin`) y `user` (lo heredan `manager` y `viewer`). `RoleSchema` no cambia.
-Catálogos, inventario y usuarios siguen con `PERMISSION_CATALOG` y `ROLE_ACTIONS`. `requirePermission` acepta las dos
+Catálogos, inventario y usuarios siguen con `PERMISSION_CATALOG` y `ROLE_ACTIONS` (desde el Bloque 3, usuarios usa
+`identity.users:manage`; ver ADR 0005). `requirePermission` acepta las dos
 formas y `GET /me` entrega ambas listas juntas.
 
 ### Montos según permiso
@@ -92,8 +93,8 @@ requisitos de certificación se registran con `entityType: 'project'` para que a
 
 ## Pendiente
 
-- Restaurar desde la Papelera: el permiso `construction.projects:restore` existe, pero aún no hay ruta.
-- Crear, editar y enviar propuestas (Bloque 3) y registrar gastos por API.
+- ~~Restaurar desde la Papelera~~ y ~~crear, editar y enviar propuestas~~: resueltos en el Bloque 3 (ADR 0005).
+- Registrar gastos por API.
 - Evidencias de certificación (archivos).
 - Pantallas de construcción en la web.
 - Empaquetar las fuentes Space Grotesk e Inter en la app; los tokens ya las nombran y se usa la fuente del sistema.

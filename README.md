@@ -73,7 +73,7 @@ pnpm dev
 
 ### Autenticación
 
-Todas las rutas salvo `/health` y las públicas de `/auth/*` exigen `Authorization: Bearer <accessToken>`. El tenant se toma del token. Detalle de sesiones, bloqueo y consultas sin tenant en [ADR 0003](docs/adr/0003-acceso-y-consultas-sin-tenant.md).
+Todas las rutas salvo `/health` y las públicas de `/auth/*` exigen `Authorization: Bearer <accessToken>`. El tenant se toma del token. Además, en cada petición se comprueba que la sesión del token siga abierta y la cuenta activa, y el rol se toma de la base: cerrar sesión, desactivar una cuenta o cambiarle el rol aplica de inmediato. Detalle de sesiones, bloqueo y consultas sin tenant en [ADR 0003](docs/adr/0003-acceso-y-consultas-sin-tenant.md) y [ADR 0005](docs/adr/0005-propuestas-usuarios-y-papelera.md).
 
 | Ruta | Descripción |
 | --- | --- |
@@ -84,8 +84,21 @@ Todas las rutas salvo `/health` y las públicas de `/auth/*` exigen `Authorizati
 | `POST /auth/password/reset` | `{ token, password }` → 204. Token de un solo uso; cierra todas las sesiones del usuario. No inicia sesión. 400 `INVALID_TOKEN` si no sirve. |
 | `POST /auth/invitations/accept` | `{ token, password }` → 204 y la cuenta queda activa. |
 | `GET /me` | Usuario, empresa (`company`), rol y lista de permisos (`permissions`). |
-| `GET /users` | Usuarios del tenant (solo `admin`). |
-| `POST /users` | Crea un usuario en el tenant: `{ email, name, password, role? }` (solo `admin`). |
+| `PATCH /me` | `identity.profile:update`. `{ name }` → el usuario actualizado. |
+| `POST /me/password` | `identity.profile:update`. `{ currentPassword, newPassword }` → 204. 400 `INVALID_CURRENT_PASSWORD` si la actual no coincide. Cierra las demás sesiones; la actual sigue abierta. |
+
+### Usuarios
+
+Todas exigen `identity.users:manage`. Las cuentas se dan de alta por invitación y no se eliminan: se desactivan.
+
+| Ruta | Descripción |
+| --- | --- |
+| `GET /users` | Paginado. Filtros `q` (nombre o correo) y `status` (`active`, `invited`, `deactivated`). |
+| `POST /users/invitations` | `{ email, name, role }` con `role` `admin` o `user`. Crea la cuenta en `invited` y envía el enlace `${APP_WEB_URL}/activar?token=...` (vence en 7 días). Responde `{ user, emailSent }`; con `emailSent: false` la cuenta quedó creada y se puede reenviar. 409 `EMAIL_IN_USE` si el correo ya existe. |
+| `POST /users/:id/invitations/resend` | Enlace nuevo; el anterior deja de servir. 409 `INVALID_TRANSITION` si la invitación ya no está pendiente. |
+| `PATCH /users/:id/role` | `{ role }`. 409 `LAST_ADMIN` si es el último administrador activo. |
+| `POST /users/:id/deactivate` | Desactiva y cierra todas sus sesiones. 409 `LAST_ADMIN` igual que arriba. |
+| `POST /users/:id/reactivate` | Vuelve a `active` (o a `invited` si nunca aceptó la invitación). |
 
 La empresa y las primeras cuentas (un `admin` y un `user`) se crean con el seed, que toma todo de las variables `SEED_*` de `.env.local` (ver `.env.example`; las contraseñas, de 15 a 128 caracteres, nunca van como argumento). Se crean en la base a la que apunte `.env.local` y es idempotente: lo que ya existe no se modifica.
 
@@ -99,7 +112,7 @@ pnpm --filter @erp/api seed
 
 - Las respuestas exitosas tienen la forma `{ success: true, data, timestamp }`. Los listados devuelven en `data` el objeto `{ items, page, pageSize, total }` y aceptan `?page=` (desde 1), `?pageSize=` (máximo 100) y, en catálogos, `?q=` como búsqueda de texto literal.
 - Cantidades, costos, precios y tasas viajan como **texto decimal** (`"12.50"`), nunca como número; se guardan como `Decimal128`.
-- Cada ruta exige un permiso. En catálogos, inventario y usuarios es `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`): `viewer` solo lee, `user` lee y crea, `manager` también modifica y `admin` puede todo; algunas rutas son solo para `admin`. En construcción es `modulo.recurso:accion` (ver [Roles y permisos](#roles-y-permisos)).
+- Cada ruta exige un permiso. En catálogos e inventario es `módulo.acción` (catálogo en `PERMISSION_CATALOG` de `packages/domain`): `viewer` solo lee, `user` lee y crea, `manager` también modifica y `admin` puede todo; algunas rutas son solo para `admin`. En construcción e identidad es `modulo.recurso:accion` (ver [Roles y permisos](#roles-y-permisos)).
 - Los errores tienen la forma `{ success: false, error: { code, message, details? }, timestamp, path }`. Los de validación (Zod) llevan `code: "VALIDATION_ERROR"` y el detalle por campo en `details`.
 
 ### Catálogos
@@ -154,7 +167,7 @@ Los módulos de construcción e identidad usan permisos `modulo.recurso:accion` 
 | `identity.profile:update` | sí | sí |
 | `identity.users:manage` | no | sí |
 
-Catálogos e inventario conservan sus permisos por acción (arriba). `GET /me` entrega ambas listas juntas y los clientes deciden con `can('permiso')`, nunca por el nombre del rol. Crea usuarios con `POST /users` (como admin) indicando `role`.
+Catálogos e inventario conservan sus permisos por acción (arriba). `GET /me` entrega ambas listas juntas y los clientes deciden con `can('permiso')`, nunca por el nombre del rol. Las cuentas nuevas se invitan con `POST /users/invitations`.
 
 ### Construcción
 
@@ -169,14 +182,21 @@ Módulo vertical en `/construction`: propuestas, obras, presupuesto y certificac
 | `POST /construction/projects/:id/transition` | `projects:update` | `{ to }`. Ciclo `planning` → `in_progress` → `certifying` → `completed`; cualquier otro salto responde 409 `INVALID_TRANSITION`. |
 | `POST /construction/projects/:id/archive` y `/unarchive` | `projects:archive` | Archivar saca la obra de los listados activos y de los KPIs; no borra nada. |
 | `DELETE /construction/projects/:id` | `projects:delete` | Borrado lógico. 409 `PROJECT_HAS_MOVEMENTS` si el presupuesto tiene algo más que el movimiento inicial. |
+| `POST /construction/projects/:id/restore` | `projects:restore` | Saca la obra de la Papelera tal como estaba. |
 | `GET /construction/projects/:id/budget-movements` | `budget:read_amounts` | Historial de movimientos, paginado. |
 | `POST /construction/projects/:id/budget-movements` | `budget:adjust` | `{ amount, reason, reversesMovementId? }`. Siempre crea un `adjustment`. |
 | `PATCH /construction/projects/:id/certification/requirements/:code` | `certifications:update` | `{ status, note }`. |
 | `GET /construction/projects/:id/activity` | `projects:read` | Entradas de `auditLog` de la obra, paginadas. |
-| `GET /construction/proposals` | `proposals:read` | Paginado. Filtro `status`. |
+| `GET /construction/proposals` | `proposals:read` | Paginado. Filtros `status` y `q` (nombre, cliente o folio). |
 | `GET /construction/proposals/:id` | `proposals:read` | Detalle. |
+| `POST /construction/proposals` | `proposals:create` | Crea un borrador con folio `PRO`. Solo `name` es obligatorio; lo demás puede ir en `null`. |
+| `PATCH /construction/proposals/:id` | `proposals:update` | Cambia solo lo enviado. 409 `NOT_EDITABLE` si no está en `draft`. |
+| `POST /construction/proposals/:id/submit` | `proposals:submit` | `draft` → `in_review`. Si falta algo, 400 `VALIDATION_ERROR` con el detalle por campo. |
+| `DELETE /construction/proposals/:id` | `proposals:delete` | Borrado lógico, solo en `draft` o `rejected`; si no, 409 `INVALID_TRANSITION`. |
+| `POST /construction/proposals/:id/restore` | `proposals:restore` | Saca la propuesta de la Papelera con su estado. |
 | `POST /construction/proposals/:id/approve` | `proposals:approve` | Aprueba y, en la misma transacción, crea la obra en `planning` y su movimiento `initial_budget`. La respuesta trae `projectId`. |
 | `POST /construction/proposals/:id/reject` | `proposals:reject` | `{ reason }` obligatorio. |
+| `GET /construction/trash` | `projects:restore` o `proposals:restore` | Obras y propuestas eliminadas (tipo, folio, nombre, fecha y quién las eliminó), solo de los tipos que el usuario puede restaurar. Paginado. |
 
 Los permisos de la tabla llevan el prefijo `construction.`.
 
@@ -186,7 +206,8 @@ Los permisos de la tabla llevan el prefijo `construction.`.
 - **Retraso**: no es un estado. `delayDays` son los días desde el fin planeado de la fase en curso (la primera `in_progress`), si ya pasó.
 - **Folios** por tenant con contador atómico (`counters`): `PRO-000001`, `OBR-000001`, `MOV-000001`.
 - **Bitácora**: cada acción escribe en `auditLog` (`actorId`, `action`, `entityType`, `entityId`, `summary`, `at`). Los resúmenes nunca incluyen montos.
-- En este bloque la API no crea ni edita propuestas (llega con el formulario del Bloque 3) ni registra gastos: los carga el seed.
+- **Propuestas en dos niveles**: el borrador acepta campos vacíos; enviar a revisión exige nombre, cliente, ubicación, tipo, alcance, fechas (entrega posterior al inicio), presupuesto, certificación objetivo y su nivel. Ambos esquemas están en `packages/domain`.
+- La API aún no registra gastos: los carga el seed.
 
 ### Tiempo real
 
@@ -282,7 +303,11 @@ También puedes usar `pnpm.cmd` o la terminal Command Prompt.
 
 **La web desplegada no puede iniciar sesión (error de CORS).** Falta el dominio de la web en `CORS_ORIGINS` de Render.
 
-**El indicador dice "Sin conexión" pero los datos cargan.** El canal WebSocket no se pudo abrir (proxy o red que lo bloquea); los datos siguen funcionando, pero sin actualizaciones en vivo hasta que se reconecte.
+**Aparece el banner "Sin conexión".** El dispositivo no tiene red o no llega a internet (lo detecta NetInfo). No hay caché sin conexión: las listas se vuelven a pedir solas al volver la red.
+
+**La invitación no llega.** Con el remitente de pruebas `onboarding@resend.dev`, Resend solo entrega al correo dueño de la cuenta de Resend. Si `RESEND_API_KEY` está vacía, el correo solo se registra en el log. La respuesta de la invitación trae `emailSent: false` cuando el envío falló; desde el detalle del usuario se puede reenviar.
+
+**Invitar mi propio correo responde `EMAIL_IN_USE`.** Ya existe una cuenta con ese correo (en cualquier empresa). Si es una de las cuentas del seed, vuelve a correrlo sobre una base limpia con `SEED_ADMIN_EMAIL` y `SEED_USER_EMAIL` distintos a tu correo.
 
 **La app no encuentra Metro o muestra pantalla roja.** Verifica que `pnpm --filter @erp/mobile start` esté activo. Con el emulador, `adb reverse tcp:8081 tcp:8081` suele resolverlo.
 
@@ -290,4 +315,4 @@ También puedes usar `pnpm.cmd` o la terminal Command Prompt.
 
 ## Decisiones de arquitectura
 
-Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md); las de acceso, en [docs/adr/0003-acceso-y-consultas-sin-tenant.md](docs/adr/0003-acceso-y-consultas-sin-tenant.md); y las del módulo de construcción, en [docs/adr/0004-modulo-construccion.md](docs/adr/0004-modulo-construccion.md).
+Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md); las de acceso, en [docs/adr/0003-acceso-y-consultas-sin-tenant.md](docs/adr/0003-acceso-y-consultas-sin-tenant.md); las del módulo de construcción, en [docs/adr/0004-modulo-construccion.md](docs/adr/0004-modulo-construccion.md); y las de propuestas, usuarios y papelera, en [docs/adr/0005-propuestas-usuarios-y-papelera.md](docs/adr/0005-propuestas-usuarios-y-papelera.md).
