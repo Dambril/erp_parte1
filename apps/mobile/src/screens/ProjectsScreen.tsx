@@ -1,8 +1,8 @@
-import React, {useEffect, useState} from 'react';
-import {ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, View} from 'react-native';
+import React, {useState} from 'react';
+import {ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View} from 'react-native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useNavigation} from '@react-navigation/native';
-import {colors, radii, touchTarget} from '@erp/ui';
+import {colors} from '@erp/ui';
 import {PROJECT_STATUS_LABEL, ProjectStatusSchema, type ProjectListItem, type ProjectStatus} from '@erp/domain';
 import {mensajeError} from '@erp/api-client';
 import {typography} from '../theme/typography';
@@ -13,6 +13,8 @@ import {apiClient} from '../lib/apiClient';
 import {ActionMenu, type MenuAction} from '../components/ActionMenu';
 import {Notice} from '../components/Card';
 import {FilterChip} from '../components/FilterChip';
+import {ListState, OfflineBanner} from '../components/ListStates';
+import {SearchInput} from '../components/SearchInput';
 import {ProjectCard} from '../components/ProjectCard';
 import {ArchiveSheet} from '../sheets/ProjectSheets';
 import type {RootStackParamList} from '../navigation/RootNavigator';
@@ -26,18 +28,11 @@ export function ProjectsScreen(): React.ReactElement {
   const {can} = useAuth();
   const {refresh} = useConstruction();
   const navigation = useNavigation<Nav>();
-  const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [menuFor, setMenuFor] = useState<ProjectListItem | null>(null);
   const [archiving, setArchiving] = useState<ProjectListItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  // La búsqueda la hace la API: se espera a que la persona deje de escribir.
-  useEffect(() => {
-    const timer = setTimeout(() => setQ(search.trim()), 350);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const canArchive = can('construction.projects:archive');
   const canUpdate = can('construction.projects:update');
@@ -80,14 +75,8 @@ export function ProjectsScreen(): React.ReactElement {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={[typography.h1, styles.title]}>Obras</Text>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Buscar por nombre o cliente"
-          placeholderTextColor={colors.stone}
-          accessibilityLabel="Buscar obras"
-          style={styles.search}
-        />
+        <OfflineBanner />
+        <SearchInput placeholder="Buscar por nombre o cliente" onSearch={setQ} />
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -98,14 +87,15 @@ export function ProjectsScreen(): React.ReactElement {
             <FilterChip label={item.label} active={filter === item.key} onPress={() => setFilter(item.key)} />
           )}
         />
-        {list.error || actionError ? <Notice text={(list.error || actionError)!} tone="error" /> : null}
+        {/* Sin elementos, el error de carga lo muestra la lista con "Reintentar". */}
+        {actionError || (list.error && list.items.length > 0) ? <Notice text={(actionError || list.error)!} tone="error" /> : null}
       </View>
 
       <FlatList
         data={list.items}
         keyExtractor={(project) => project.id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={list.loading} onRefresh={list.reload} />}
+        refreshControl={<RefreshControl refreshing={list.loading && list.items.length > 0} onRefresh={list.reload} />}
         onEndReached={list.loadMore}
         onEndReachedThreshold={0.4}
         renderItem={({item}) => (
@@ -117,11 +107,17 @@ export function ProjectsScreen(): React.ReactElement {
         )}
         ListFooterComponent={list.loadingMore ? <ActivityIndicator color={colors.ink} style={styles.footer} /> : null}
         ListEmptyComponent={
-          list.loading ? null : (
-            <Text style={[typography.body, styles.empty]}>
-              {filter === 'archived' ? 'No hay obras archivadas.' : 'No hay obras con ese filtro.'}
-            </Text>
-          )
+          <ListState
+            loading={list.loading}
+            error={list.error}
+            query={q}
+            onRetry={list.reload}
+            empty={
+              filter === 'all'
+                ? {title: 'Aún no hay obras', text: 'Las obras se crean al aprobar una propuesta.'}
+                : {title: filter === 'archived' ? 'No hay obras archivadas' : 'No hay obras con ese filtro'}
+            }
+          />
         }
       />
 
@@ -144,18 +140,7 @@ const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: colors.bone},
   header: {padding: 20, paddingBottom: 8, gap: 12},
   title: {color: colors.ink},
-  search: {
-    minHeight: touchTarget,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radii.input,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: colors.white,
-    color: colors.ink,
-  },
   chips: {gap: 8},
   list: {padding: 20, paddingTop: 8, gap: 10},
   footer: {marginVertical: 12},
-  empty: {color: colors.inkSecondary, textAlign: 'center', marginTop: 24},
 });

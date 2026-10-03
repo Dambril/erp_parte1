@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {mensajeError} from '@erp/api-client';
 import type {Paginated} from '@erp/domain';
+import {useConnectivity} from '../state/ConnectivityContext';
 import {useConstruction} from '../state/ConstructionContext';
 
 export interface Resource<T> {
@@ -11,18 +12,25 @@ export interface Resource<T> {
 }
 
 /**
- * Carga un recurso de la API y lo vuelve a pedir cuando cambia `key` o cuando el canal de tiempo real avisa
- * de un cambio. `key` resume de qué depende `load` (ids, filtros). Con `enabled: false` no pide nada
- * (p. ej. el historial de movimientos sin permiso para verlo).
+ * Carga un recurso de la API y lo vuelve a pedir cuando cambia `key`, cuando el canal de tiempo real avisa
+ * de un cambio o cuando vuelve la conexión tras un error. `key` resume de qué depende `load` (ids, filtros).
+ * Con `enabled: false` no pide nada (p. ej. el historial de movimientos sin permiso para verlo).
  */
 export function useResource<T>(load: () => Promise<T>, key: string, enabled = true): Resource<T> {
   const {version} = useConstruction();
+  const online = useConnectivity();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const loadRef = useRef(load);
   loadRef.current = load;
+  const failedRef = useRef(false);
+  failedRef.current = error !== null;
+
+  useEffect(() => {
+    if (online && failedRef.current) setAttempt((current) => current + 1);
+  }, [online]);
 
   useEffect(() => {
     if (!enabled) {
