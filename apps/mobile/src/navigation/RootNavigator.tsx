@@ -12,6 +12,11 @@ import {ProjectDetailScreen} from '../screens/ProjectDetailScreen';
 import {ProjectEditScreen} from '../screens/ProjectEditScreen';
 import {ProposalDetailScreen} from '../screens/ProposalDetailScreen';
 import {ProposalFormScreen} from '../screens/ProposalFormScreen';
+import {ChangePasswordScreen} from '../screens/ChangePasswordScreen';
+import {TrashScreen} from '../screens/TrashScreen';
+import {UserDetailScreen} from '../screens/UserDetailScreen';
+import {UsersScreen} from '../screens/UsersScreen';
+import type {PublicUser} from '@erp/domain';
 import {MainTabs} from './MainTabs';
 
 export type RootStackParamList = {
@@ -24,6 +29,11 @@ export type RootStackParamList = {
   ProposalDetail: {proposalId: string};
   /** Sin `proposalId` crea una propuesta nueva. */
   ProposalForm: {proposalId?: string} | undefined;
+  ChangePassword: undefined;
+  Users: undefined;
+  /** El usuario viene de la lista: la API no tiene `GET /users/:id`. */
+  UserDetail: {user: PublicUser};
+  Trash: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -59,6 +69,10 @@ export function RootNavigator(): React.ReactElement {
           <Stack.Screen name="ProjectEdit" component={ProjectEditScreen} options={{title: 'Editar obra'}} />
           <Stack.Screen name="ProposalDetail" component={ProposalDetailScreen} options={{title: 'Detalle de propuesta'}} />
           <Stack.Screen name="ProposalForm" component={ProposalFormScreen} options={{title: 'Nueva propuesta'}} />
+          <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{title: 'Cambiar contraseña'}} />
+          <Stack.Screen name="Users" component={UsersScreen} options={{title: 'Usuarios'}} />
+          <Stack.Screen name="UserDetail" component={UserDetailScreen} options={{title: 'Usuario'}} />
+          <Stack.Screen name="Trash" component={TrashScreen} options={{title: 'Papelera'}} />
         </>
       ) : (
         <>
