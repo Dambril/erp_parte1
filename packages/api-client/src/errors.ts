@@ -1,12 +1,31 @@
+/** Detalle por campo de un `VALIDATION_ERROR` (`field` usa puntos: `client.name`, `materials.0.origin`). */
+export interface ApiErrorDetail {
+  field?: string;
+  message: string;
+  code: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
     public code: string,
+    public details: ApiErrorDetail[] = [],
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** Primer mensaje por campo de un `VALIDATION_ERROR`, para mostrarlo junto a cada campo del formulario. */
+export function erroresPorCampo(error: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (error instanceof ApiError) {
+    for (const detail of error.details) {
+      if (detail.field && !result[detail.field]) result[detail.field] = detail.message;
+    }
+  }
+  return result;
 }
 
 const MENSAJES: Record<string, string> = {
@@ -24,6 +43,11 @@ const MENSAJES: Record<string, string> = {
   PROPOSAL_NOT_FOUND: 'La propuesta ya no existe.',
   MOVEMENT_NOT_FOUND: 'El movimiento a corregir ya no existe.',
   REQUIREMENT_NOT_FOUND: 'La obra no tiene ese requisito de certificación.',
+  USER_NOT_FOUND: 'El usuario ya no existe.',
+  INVALID_CURRENT_PASSWORD: 'La contraseña actual no es correcta.',
+  LAST_ADMIN: 'Es el último administrador activo. Asigna antes a otro administrador.',
+  EMAIL_IN_USE: 'Ya existe una cuenta con ese correo.',
+  NOT_EDITABLE: 'Solo se puede editar una propuesta en borrador.',
 };
 
 export function esErrorDeRed(error: unknown): boolean {

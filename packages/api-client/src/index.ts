@@ -3,9 +3,11 @@ import type {
   CreateBudgetMovementRequest, CreateLotRequest, CreateMovementRequest, Dashboard, PageQuery, ProjectDetail,
   ProjectDetailWithAmounts, ProjectListItem, ProjectsQuery, ProjectStatus, ProposalDetail, ProposalDetailWithAmounts, ProposalsQuery,
   ProposalSummary, ProposalSummaryWithAmounts, UpdateProjectRequest, UpdateRequirementRequest,
+  AssignableRole, ChangePasswordRequest, InviteUserRequest, InviteUserResponse, ProposalDraftRequest, PublicUser, TrashItem,
+  TrashQuery, UpdateProposalRequest, UsersQuery,
   CreateTransferRequest, InventoryMovement, InventorySettings, Kardex, KardexQuery, Lot, MeResponse,   Paginated, Permission, ReconciliationReport, ResetPasswordRequest, StockLevel, StockQuery, TransferResult,
   } from '@erp/domain';
-import { ApiError } from './errors';
+import { ApiError, type ApiErrorDetail } from './errors';
 
 export * from './errors';
 export * from './realtime';
@@ -150,6 +152,21 @@ export class ApiClient {
     return this.send('GET', '/me');
   }
 
+  /** Cambia el nombre propio y avisa a los oyentes con los datos de sesión actualizados. */
+  async updateProfile(name: string): Promise<PublicUser> {
+    const user = await this.send<PublicUser>('PATCH', '/me', { name });
+    if (this.currentMe) {
+      this.currentMe = { ...this.currentMe, user };
+      for (const listener of this.listeners) listener(this.currentMe);
+    }
+    return user;
+  }
+
+  /** Cierra las demás sesiones de la cuenta; esta sigue abierta. */
+  async changePassword(input: ChangePasswordRequest): Promise<void> {
+    await this.send('POST', '/me/password', input);
+  }
+
   /** Responde igual exista o no la cuenta. */
   async forgotPassword(email: string): Promise<void> {
     await this.send('POST', '/auth/password/forgot', { email }, false);
@@ -195,6 +212,7 @@ export class ApiClient {
       archive: (id: string) => this.send<ProjectDetail | ProjectDetailWithAmounts>('POST', `/construction/projects/${id}/archive`),
       unarchive: (id: string) => this.send<ProjectDetail | ProjectDetailWithAmounts>('POST', `/construction/projects/${id}/unarchive`),
       remove: (id: string) => this.send<void>('DELETE', `/construction/projects/${id}`),
+      restore: (id: string) => this.send<ProjectDetail | ProjectDetailWithAmounts>('POST', `/construction/projects/${id}/restore`),
       activity: (id: string, query?: PageQuery) =>
         this.send<Paginated<ActivityEntry>>('GET', `/construction/projects/${id}/activity${queryString(query)}`),
       movements: (id: string, query?: PageQuery) =>
@@ -209,11 +227,36 @@ export class ApiClient {
       list: (query?: ProposalsQuery) =>
         this.send<Paginated<ProposalSummary | ProposalSummaryWithAmounts>>('GET', `/construction/proposals${queryString(query)}`),
       get: (id: string) => this.send<ProposalDetail | ProposalDetailWithAmounts>('GET', `/construction/proposals/${id}`),
+      /** Crea un borrador; solo el nombre es obligatorio. */
+      create: (input: ProposalDraftRequest) =>
+        this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', '/construction/proposals', input),
+      /** Solo en borrador; lo no enviado no cambia. */
+      update: (id: string, changes: UpdateProposalRequest) =>
+        this.send<ProposalDetail | ProposalDetailWithAmounts>('PATCH', `/construction/proposals/${id}`, changes),
+      /** Si falta algo responde `VALIDATION_ERROR` con el detalle por campo (`ApiError.details`). */
+      submit: (id: string) => this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', `/construction/proposals/${id}/submit`),
+      remove: (id: string) => this.send<void>('DELETE', `/construction/proposals/${id}`),
+      restore: (id: string) => this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', `/construction/proposals/${id}/restore`),
       /** Al aprobar se crea la obra: su id viene en `projectId`. */
       approve: (id: string) => this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', `/construction/proposals/${id}/approve`),
       reject: (id: string, reason: string) =>
         this.send<ProposalDetail | ProposalDetailWithAmounts>('POST', `/construction/proposals/${id}/reject`, { reason }),
     },
+    /** Obras y propuestas eliminadas que el usuario puede restaurar. */
+    trash: (query?: TrashQuery) => this.send<Paginated<TrashItem>>('GET', `/construction/trash${queryString(query)}`),
+  };
+
+  // ── Usuarios ────────────────────────────────────────────────────
+
+  readonly users = {
+    list: (query?: UsersQuery) => this.send<Paginated<PublicUser>>('GET', `/users${queryString(query)}`),
+    /** `emailSent: false` si el correo no salió: la cuenta queda invitada y se puede reenviar. */
+    invite: (input: InviteUserRequest) => this.send<InviteUserResponse>('POST', '/users/invitations', input),
+    resendInvitation: (id: string) => this.send<InviteUserResponse>('POST', `/users/${id}/invitations/resend`),
+    /** `LAST_ADMIN` si es el último administrador activo. */
+    changeRole: (id: string, role: AssignableRole) => this.send<PublicUser>('PATCH', `/users/${id}/role`, { role }),
+    deactivate: (id: string) => this.send<PublicUser>('POST', `/users/${id}/deactivate`),
+    reactivate: (id: string) => this.send<PublicUser>('POST', `/users/${id}/reactivate`),
   };
 
   // ── Catálogos ───────────────────────────────────────────────────
@@ -291,14 +334,14 @@ export class ApiClient {
     }
 
     if (response.status === 204) return undefined as T;
-    const json = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
+    const json = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string; details?: ApiErrorDetail[] } };
     if (response.ok) return json as T;
 
     const code: string = json.error?.code || 'UNKNOWN_ERROR';
     if (auth && response.status === 401 && RENEWABLE_CODES.has(code) && this.session && !retried) {
       if (await this.refreshSession()) return this.request<T>(method, path, body, auth, true);
     }
-    throw new ApiError(response.status, json.error?.message || 'Request failed', code);
+    throw new ApiError(response.status, json.error?.message || 'Request failed', code, json.error?.details ?? []);
   }
 
   private async doRefresh(): Promise<SessionTokens | null> {
