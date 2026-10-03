@@ -11,6 +11,7 @@ import {LoginScreen} from '../screens/LoginScreen';
 import {ProjectDetailScreen} from '../screens/ProjectDetailScreen';
 import {ProjectEditScreen} from '../screens/ProjectEditScreen';
 import {ProposalDetailScreen} from '../screens/ProposalDetailScreen';
+import {ProposalFormScreen} from '../screens/ProposalFormScreen';
 import {MainTabs} from './MainTabs';
 
 export type RootStackParamList = {
@@ -21,6 +22,8 @@ export type RootStackParamList = {
   ProjectDetail: {projectId: string};
   ProjectEdit: {projectId: string};
   ProposalDetail: {proposalId: string};
+  /** Sin `proposalId` crea una propuesta nueva. */
+  ProposalForm: {proposalId?: string} | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -55,6 +58,7 @@ export function RootNavigator(): React.ReactElement {
           <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{title: 'Detalle de obra'}} />
           <Stack.Screen name="ProjectEdit" component={ProjectEditScreen} options={{title: 'Editar obra'}} />
           <Stack.Screen name="ProposalDetail" component={ProposalDetailScreen} options={{title: 'Detalle de propuesta'}} />
+          <Stack.Screen name="ProposalForm" component={ProposalFormScreen} options={{title: 'Nueva propuesta'}} />
         </>
       ) : (
         <>

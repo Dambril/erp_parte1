@@ -8,6 +8,7 @@ import {
 import {BottomSheet} from '../components/BottomSheet';
 import {Notice} from '../components/Card';
 import {FilterChip} from '../components/FilterChip';
+import {MoneyField} from '../components/MoneyField';
 import {PrimaryButton} from '../components/PrimaryButton';
 import {TextField} from '../components/TextField';
 import {useSubmit} from '../hooks/useSubmit';
@@ -162,7 +163,6 @@ export function AdjustmentSheet({
   // El monto se maneja siempre como string: `parseMoneyInput` valida y `negateMoney` cambia el signo.
   const entered = parseMoneyInput(amountText);
   const amount = reversing ? negateMoney(reversing.amount) : entered ? (kind === 'reduction' ? negateMoney(entered) : entered) : null;
-  const amountError = !reversing && amountText.trim() && !entered ? 'Escribe un monto mayor que cero, con hasta dos decimales.' : null;
 
   const save = () => {
     if (!amount) return;
@@ -195,15 +195,7 @@ export function AdjustmentSheet({
             <FilterChip label="Aumento" active={kind === 'increase'} onPress={() => setKind('increase')} />
             <FilterChip label="Reducción" active={kind === 'reduction'} onPress={() => setKind('reduction')} />
           </View>
-          <TextField
-            label="Monto (MXN)"
-            value={amountText}
-            onChangeText={setAmountText}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            error={amountError}
-            hint={entered ? formatMoney(amount ?? entered) : undefined}
-          />
+          <MoneyField label="Monto (MXN)" value={amountText} onChangeText={setAmountText} preview={amount} />
         </>
       )}
       <TextField

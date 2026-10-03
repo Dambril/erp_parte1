@@ -99,9 +99,7 @@ export function DashboardScreen(): React.ReactElement {
 
       {can('construction.proposals:create') ? (
         <View style={styles.newProposal}>
-          {/* El formulario de propuestas llega en el Bloque 3. */}
-          <PrimaryButton label="Nueva propuesta" onPress={() => undefined} disabled />
-          <Text style={[typography.bodySmall, styles.muted]}>Disponible próximamente.</Text>
+          <PrimaryButton label="Nueva propuesta" onPress={() => navigation.navigate('ProposalForm')} />
         </View>
       ) : null}
 

@@ -12,6 +12,8 @@ import {FilterChip} from '../components/FilterChip';
 import {ListState, OfflineBanner} from '../components/ListStates';
 import {ProposalCard} from '../components/ProposalCard';
 import {SearchInput} from '../components/SearchInput';
+import {TextLink} from '../components/TextLink';
+import {useAuth} from '../state/AuthContext';
 import type {RootStackParamList} from '../navigation/RootNavigator';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -32,6 +34,7 @@ const EMPTY_TEXT: Record<ProposalStatus, string> = {
 
 export function ProposalsScreen(): React.ReactElement {
   const navigation = useNavigation<Nav>();
+  const {can} = useAuth();
   const [status, setStatus] = useState<ProposalStatus>('in_review');
   const [q, setQ] = useState('');
   const list = usePagedList(
@@ -42,7 +45,12 @@ export function ProposalsScreen(): React.ReactElement {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={[typography.h1, styles.title]}>Propuestas</Text>
+        <View style={styles.titleRow}>
+          <Text style={[typography.h1, styles.title]}>Propuestas</Text>
+          {can('construction.proposals:create') ? (
+            <TextLink label="Nueva" onPress={() => navigation.navigate('ProposalForm')} />
+          ) : null}
+        </View>
         <OfflineBanner />
         <SearchInput placeholder="Buscar por nombre, cliente o folio" onSearch={setQ} />
         <FlatList
@@ -75,7 +83,13 @@ export function ProposalsScreen(): React.ReactElement {
             error={list.error}
             query={q}
             onRetry={list.reload}
-            empty={{title: 'Aún no hay propuestas', text: EMPTY_TEXT[status]}}
+            empty={{
+              title: 'Aún no hay propuestas',
+              text: EMPTY_TEXT[status],
+              action: can('construction.proposals:create')
+                ? {label: 'Crear propuesta', onPress: () => navigation.navigate('ProposalForm')}
+                : undefined,
+            }}
           />
         }
       />
@@ -87,6 +101,7 @@ const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: colors.bone},
   header: {padding: 20, paddingBottom: 8, gap: 12},
   title: {color: colors.ink},
+  titleRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
   chips: {gap: 8},
   list: {padding: 20, paddingTop: 8, gap: 10},
   footer: {marginVertical: 12},

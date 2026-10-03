@@ -114,7 +114,13 @@ export function ProjectsScreen(): React.ReactElement {
             onRetry={list.reload}
             empty={
               filter === 'all'
-                ? {title: 'Aún no hay obras', text: 'Las obras se crean al aprobar una propuesta.'}
+                ? {
+                    title: 'Aún no hay obras',
+                    text: 'Las obras se crean al aprobar una propuesta.',
+                    action: can('construction.proposals:create')
+                      ? {label: 'Crear propuesta', onPress: () => navigation.navigate('ProposalForm')}
+                      : undefined,
+                  }
                 : {title: filter === 'archived' ? 'No hay obras archivadas' : 'No hay obras con ese filtro'}
             }
           />
