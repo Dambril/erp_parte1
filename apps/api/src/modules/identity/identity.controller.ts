@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
 import {
-  AcceptInvitationRequestSchema, CreateUserRequestSchema, ForgotPasswordRequestSchema, LoginRequestSchema, RefreshRequestSchema,
-  ResetPasswordRequestSchema,
+  AcceptInvitationRequestSchema, ForgotPasswordRequestSchema, LoginRequestSchema, RefreshRequestSchema, ResetPasswordRequestSchema,
 } from '@erp/domain';
 import type { IdentityService } from './identity.service';
 
@@ -52,14 +51,5 @@ export class IdentityController {
   me = async (request: Request, response: Response) => {
     const { user, tenantId } = context(request);
     ok(response, await this.service().getMe(user.id, tenantId));
-  };
-
-  listUsers = async (request: Request, response: Response) => {
-    ok(response, await this.service().listUsers(context(request).tenantId));
-  };
-
-  createUser = async (request: Request, response: Response) => {
-    const { user, tenantId } = context(request);
-    ok(response, await this.service().createUser(CreateUserRequestSchema.parse(request.body), tenantId, user), 201);
   };
 }

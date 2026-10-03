@@ -42,11 +42,16 @@ export function createEmailSender(config: ServerConfig): EmailSender {
   return config.resendApiKey ? new ResendEmailSender(config.resendApiKey, config.emailFrom ?? DEFAULT_FROM) : new NoopEmailSender();
 }
 
-/** Un fallo del proveedor no debe romper la operación del usuario: se registra (sin destinatario ni contenido) y se sigue. */
-export async function sendEmailSafely(sender: EmailSender, message: EmailMessage): Promise<void> {
+/**
+ * Un fallo del proveedor no debe romper la operación del usuario: se registra (sin destinatario ni contenido) y se sigue.
+ * Devuelve `false` si el correo no salió, para quien necesite avisarlo (invitaciones).
+ */
+export async function sendEmailSafely(sender: EmailSender, message: EmailMessage): Promise<boolean> {
   try {
     await sender.send(message);
+    return true;
   } catch (error) {
     logger.error('Failed to send email', { subject: message.subject, error: error instanceof Error ? error.message : String(error) });
+    return false;
   }
 }

@@ -397,26 +397,19 @@ describe('users and tenant isolation', () => {
     const { accessToken } = await login('admin-b@example.com');
     const response = await request(app).get('/users').set(bearer(accessToken)).set('X-Tenant-Id', 'tenant-a');
     expect(response.status).toBe(200);
-    expect(response.body.data.map((user: { email: string }) => user.email)).toEqual(['admin-b@example.com']);
+    expect(response.body.data.items.map((user: { email: string }) => user.email)).toEqual(['admin-b@example.com']);
   });
 
-  it('lets an admin create a user in their own tenant', async () => {
+  it('no longer creates accounts with a password over the API: users join by invitation', async () => {
     const { accessToken } = await login('admin-a@example.com');
     const response = await request(app).post('/users').set(bearer(accessToken))
-      .send({ email: 'new-a@example.com', name: 'Nuevo', password: NEW_PASSWORD, tenantId: 'tenant-b' });
-    expect(response.status).toBe(201);
-    expect(response.body.data).toMatchObject({ email: 'new-a@example.com', role: 'user', status: 'active', tenantId: 'tenant-a' });
+      .send({ email: 'new-a@example.com', name: 'Nuevo', password: NEW_PASSWORD });
+    expect(response.status).toBe(404);
+    expect(await getDatabase().collection(USERS_COLLECTION).findOne({ email: 'new-a@example.com' })).toBeNull();
   });
 
-  it('forbids a viewer and an admin creating a superadmin, and rejects duplicated emails', async () => {
-    const viewer = await login('viewer-a@example.com');
-    expect((await request(app).post('/users').set(bearer(viewer.accessToken)).send({ email: 'x@example.com', name: 'X', password: NEW_PASSWORD })).status).toBe(403);
-    const admin = await login('admin-a@example.com');
-    expect((await request(app).post('/users').set(bearer(admin.accessToken))
-      .send({ email: 'root@example.com', name: 'Root', role: 'superadmin', password: NEW_PASSWORD })).status).toBe(403);
-    const duplicated = await request(app).post('/users').set(bearer(admin.accessToken)).send({ email: 'admin-b@example.com', name: 'Dup', password: NEW_PASSWORD });
-    expect(duplicated.status).toBe(409);
-    expect(duplicated.body.error.code).toBe('EMAIL_TAKEN');
+  it('the seed service rejects duplicated emails across tenants', async () => {
+    await expect(seedUser('admin-b@example.com', 'user', 'tenant-a')).rejects.toMatchObject({ statusCode: 409, code: 'EMAIL_TAKEN' });
   });
 
   it('sends a welcome email when a user is created, without the password', async () => {

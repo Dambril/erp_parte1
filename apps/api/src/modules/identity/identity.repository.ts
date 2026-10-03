@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { ClientSession, Collection, Db } from 'mongodb';
+import { MongoServerError, type ClientSession, type Collection, type Db, type Filter } from 'mongodb';
 import type { PublicUser, Role, UserStatus } from '@erp/domain';
-import { TenantRepository, toApiDocument, type TenantScopedDocument } from '../../core/repository';
+import { TransactionConflictError } from '../../config/database';
+import {
+  escapeRegex, TenantRepository, toApiDocument, type Page, type PageRequest, type TenantScopedDocument,
+} from '../../core/repository';
 
 export const USERS_COLLECTION = 'users';
 export const SESSIONS_COLLECTION = 'sessions';
@@ -75,6 +78,52 @@ export class UsersRepository extends TenantRepository<UserDocument> {
       { returnDocument: 'after', session },
     ) as Promise<UserDocument | null>;
   }
+
+  /** Usuarios del tenant por nombre, con búsqueda literal en nombre o correo y filtro de estado. */
+  async search(tenantId: string, { q, status }: UserSearch, page: PageRequest): Promise<Page<UserDocument>> {
+    const filter: Filter<UserDocument> = {};
+    if (status) filter.status = status;
+    if (q) {
+      const pattern = new RegExp(escapeRegex(q), 'i');
+      filter.$or = [{ name: pattern }, { email: pattern }];
+    }
+    return this.findPage(tenantId, filter, page, { name: 1, _id: 1 });
+  }
+
+  private async change(
+    id: string, tenantId: string, filter: Filter<UserDocument>, changes: Partial<UserDocument>, session?: ClientSession,
+  ): Promise<UserDocument | null> {
+    return this.collection.findOneAndUpdate(
+      this.scoped(tenantId, { ...filter, _id: id }),
+      { $set: { ...changes, updatedAt: new Date() } },
+      { returnDocument: 'after', session },
+    ) as Promise<UserDocument | null>;
+  }
+
+  async setRole(id: string, tenantId: string, role: Role, session: ClientSession): Promise<UserDocument | null> {
+    return this.change(id, tenantId, {}, { role }, session);
+  }
+
+  /** Cambia el estado solo si sigue siendo uno de `from`. Devuelve null si ya cambió o no existe. */
+  async setStatus(id: string, tenantId: string, from: UserStatus[], to: UserStatus, session: ClientSession): Promise<UserDocument | null> {
+    return this.change(id, tenantId, { status: { $in: from } }, { status: to }, session);
+  }
+
+  async setName(id: string, tenantId: string, name: string): Promise<UserDocument | null> {
+    return this.change(id, tenantId, { status: 'active' }, { name });
+  }
+
+  /** Cuentas activas del tenant con alguno de esos roles, sin contar a `exceptId`. */
+  async countActiveWithRoles(tenantId: string, roles: Role[], exceptId: string, session: ClientSession): Promise<number> {
+    return this.collection.countDocuments(
+      this.scoped(tenantId, { status: 'active', role: { $in: roles }, _id: { $ne: exceptId } }), { session },
+    );
+  }
+}
+
+export interface UserSearch {
+  q?: string;
+  status?: UserStatus;
 }
 
 // ── Sesiones ───────────────────────────────────────────────────────
@@ -94,7 +143,7 @@ export interface SessionDocument {
   updatedAt: Date;
 }
 
-export type SessionRevokeReason = 'rotated' | 'logout' | 'password_changed' | 'reuse_detected';
+export type SessionRevokeReason = 'rotated' | 'logout' | 'password_changed' | 'reuse_detected' | 'deactivated';
 
 export type NewSession = Pick<SessionDocument, 'tenantId' | 'userId' | 'refreshTokenHash' | 'expiresAt'>;
 
@@ -138,6 +187,18 @@ export class SessionsRepository {
       { session },
     );
   }
+
+  /** Revoca todas las sesiones del usuario menos `keepId` (la que hace el cambio de contraseña sigue viva). */
+  async revokeOthersForUser(
+    userId: string, tenantId: string, keepId: string, reason: SessionRevokeReason, session?: ClientSession,
+  ): Promise<void> {
+    const now = new Date();
+    await this.collection.updateMany(
+      { tenantId, userId, revokedAt: null, _id: { $ne: keepId } },
+      { $set: { revokedAt: now, revokedReason: reason, updatedAt: now } },
+      { session },
+    );
+  }
 }
 
 // ── Tokens de un solo uso (restablecer contraseña, invitación) ─────
@@ -163,10 +224,15 @@ export class AuthTokensRepository {
   public constructor(private readonly collection: Collection<AuthTokenDocument>) {}
 
   /** Un token nuevo invalida los pendientes del mismo usuario y tipo: solo sirve el último enlace enviado. */
-  async createForUser(token: NewAuthToken): Promise<void> {
-    await this.collection.deleteMany({ tenantId: token.tenantId, userId: token.userId, type: token.type, usedAt: null });
+  async createForUser(token: NewAuthToken, session?: ClientSession): Promise<void> {
+    await this.deletePendingForUser(token.tenantId, token.userId, token.type, session);
     const now = new Date();
-    await this.collection.insertOne({ ...token, _id: randomUUID(), usedAt: null, custom: {}, createdAt: now, updatedAt: now });
+    await this.collection.insertOne({ ...token, _id: randomUUID(), usedAt: null, custom: {}, createdAt: now, updatedAt: now }, { session });
+  }
+
+  /** Invalida los enlaces que el usuario aún no usa (p. ej. la invitación de una cuenta que se desactiva). */
+  async deletePendingForUser(tenantId: string, userId: string, type: AuthTokenType, session?: ClientSession): Promise<void> {
+    await this.collection.deleteMany({ tenantId, userId, type, usedAt: null }, { session });
   }
 
   /**
@@ -212,6 +278,27 @@ export class TenantsRepository {
       { upsert: true },
     );
     return result.upsertedCount === 1;
+  }
+
+  /**
+   * Marca la empresa como modificada dentro de una transacción. Sirve de candado para las reglas que dependen
+   * de varios usuarios a la vez (no dejar al tenant sin administrador): dos cambios simultáneos chocan aquí
+   * (WriteConflict) y el que se reintenta ve el resultado del otro. Crea el registro si el tenant aún no lo tiene.
+   */
+  async lock(tenantId: string, session: ClientSession): Promise<void> {
+    if (!tenantId) throw new Error('tenantId is required for repository queries');
+    const now = new Date();
+    try {
+      await this.collection.updateOne(
+        { _id: tenantId },
+        { $set: { updatedAt: now }, $setOnInsert: { tenantId, name: tenantId, custom: {}, createdAt: now, deletedAt: null } },
+        { upsert: true, session },
+      );
+    } catch (error) {
+      // Dos transacciones crean a la vez el registro de la empresa: se reintenta la transacción completa.
+      if (error instanceof MongoServerError && error.code === 11000) throw new TransactionConflictError();
+      throw error;
+    }
   }
 }
 

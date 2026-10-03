@@ -22,7 +22,7 @@ export const MAX_FAILED_LOGINS = 5;
 export const LOCK_MINUTES = 5;
 export const REFRESH_TOKEN_DAYS = 30;
 export const PASSWORD_RESET_MINUTES = 60;
-/** Vigencia de las invitaciones; las emite el envío de invitaciones (Bloque 3). */
+/** Vigencia de las invitaciones (las emite `UsersService`). */
 export const INVITATION_DAYS = 7;
 
 // Un único mensaje para correo inexistente, contraseña incorrecta y cuenta no activa: no revela qué cuentas existen.
@@ -123,11 +123,10 @@ export class IdentityService {
     return toPublicUser(user);
   }
 
-  async listUsers(tenantId: string): Promise<PublicUser[]> {
-    return (await this.deps.users.findMany(tenantId)).map(toPublicUser);
-  }
-
-  /** `actor` es quien crea el usuario; el nuevo usuario siempre pertenece al tenant indicado. */
+  /**
+   * Alta directa de una cuenta activa con contraseña, para el seed y las pruebas: por la API las cuentas se dan
+   * de alta por invitación (`UsersService.invite`). `actor` es quien la crea; pertenece siempre al tenant indicado.
+   */
   async createUser(input: CreateUserRequest, tenantId: string, actor?: RequestUser): Promise<PublicUser> {
     if (input.role === 'superadmin' && actor && actor.role !== 'superadmin') {
       throw new HttpError(403, 'FORBIDDEN', 'Only a superadmin can create superadmin users');
