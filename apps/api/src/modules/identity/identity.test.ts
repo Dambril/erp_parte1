@@ -159,6 +159,61 @@ describe('POST /auth/login', () => {
   });
 });
 
+describe('sesión por cookie httpOnly (web)', () => {
+  const cookieMode = { 'X-Session-Transport': 'cookie' };
+  const cookieLogin = () => request(app).post('/auth/login').set(cookieMode).send({ email: 'admin-a@example.com', password: PASSWORD });
+  const refreshCookie = (response: request.Response) =>
+    (response.headers['set-cookie'] as unknown as string[]).find((cookie) => cookie.startsWith('tssera_rt='))!;
+
+  it('login entrega el refresh token solo en una cookie httpOnly limitada a /auth', async () => {
+    const response = await cookieLogin();
+    expect(response.status).toBe(200);
+    expect(response.body.data.accessToken).toEqual(expect.any(String));
+    expect(JSON.stringify(response.body)).not.toContain('refreshToken');
+    const cookie = refreshCookie(response);
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toMatch(/Path=\/auth/i);
+    expect(cookie).toMatch(/SameSite=Lax/i);
+  });
+
+  it('refresh lee la cookie, la rota y no devuelve el token en el cuerpo', async () => {
+    const first = refreshCookie(await cookieLogin()).split(';')[0]!;
+    const rotated = await request(app).post('/auth/refresh').set(cookieMode).set('Cookie', first).send({});
+    expect(rotated.status).toBe(200);
+    expect(JSON.stringify(rotated.body)).not.toContain('refreshToken');
+    expect(refreshCookie(rotated).split(';')[0]).not.toBe(first);
+    expect((await request(app).get('/me').set(bearer(rotated.body.data.accessToken))).status).toBe(200);
+  });
+
+  it('sin cookie o con una inválida responde 401 y la borra; la cookie sola, sin la cabecera, no sirve', async () => {
+    const missing = await request(app).post('/auth/refresh').set(cookieMode).send({});
+    expect(missing.status).toBe(401);
+    expect(missing.body.error.code).toBe('INVALID_REFRESH_TOKEN');
+
+    const invalid = await request(app).post('/auth/refresh').set(cookieMode).set('Cookie', 'tssera_rt=no-existe').send({});
+    expect(invalid.status).toBe(401);
+    expect(refreshCookie(invalid)).toMatch(/tssera_rt=;/);
+
+    const cookie = refreshCookie(await cookieLogin()).split(';')[0]!;
+    expect((await request(app).post('/auth/refresh').set('Cookie', cookie).send({})).status).toBe(400);
+  });
+
+  it('logout revoca la sesión y borra la cookie', async () => {
+    const session = await cookieLogin();
+    const cookie = refreshCookie(session).split(';')[0]!;
+    const logout = await request(app).post('/auth/logout').set(cookieMode).set(bearer(session.body.data.accessToken));
+    expect(logout.status).toBe(204);
+    expect(refreshCookie(logout)).toMatch(/tssera_rt=;/);
+    expect((await request(app).post('/auth/refresh').set(cookieMode).set('Cookie', cookie).send({})).status).toBe(401);
+  });
+
+  it('CORS permite credenciales al origen que hace la petición', async () => {
+    const response = await request(app).options('/auth/refresh').set('Origin', 'http://localhost:5173').set('Access-Control-Request-Method', 'POST');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+  });
+});
+
 describe('sessions', () => {
   it('refresh rotates the token and the previous one no longer works', async () => {
     const first = await login('admin-a@example.com');

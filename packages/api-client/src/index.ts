@@ -1,5 +1,5 @@
 import type {
-  AcceptInvitationRequest, ActivityEntry, AuthSession, BudgetMovement, CatalogResource, CatalogResources, CertificationRequirement,
+  AcceptInvitationRequest, ActivityEntry, AuthSession, CookieAuthSession, BudgetMovement, CatalogResource, CatalogResources, CertificationRequirement,
   CreateBudgetMovementRequest, CreateLotRequest, CreateMovementRequest, Dashboard, PageQuery, ProjectDetail,
   ProjectDetailWithAmounts, ProjectListItem, ProjectsQuery, ProjectStatus, ProposalDetail, ProposalDetailWithAmounts, ProposalsQuery,
   ProposalSummary, ProposalSummaryWithAmounts, UpdateProjectRequest, UpdateRequirementRequest,
@@ -56,7 +56,15 @@ export interface ApiClientOptions {
    * Si hay sesión iniciada, esta tiene prioridad. El tenant lo determina el token en el servidor.
    */
   accessToken?: string;
+  /**
+   * Solo navegadores: el refresh token viaja en una cookie httpOnly que pone la API y este cliente nunca lo ve.
+   * El `sessionStore` solo recuerda si hay sesión (ver `COOKIE_SESSION`).
+   */
+  cookieSession?: boolean;
 }
+
+/** Valor que un `SessionStore` de navegador devuelve como `refreshToken` cuando el real vive en la cookie. */
+export const COOKIE_SESSION = 'cookie';
 
 export interface ListQuery {
   page?: number;
@@ -82,6 +90,7 @@ const RENEWABLE_CODES = new Set(['INVALID_TOKEN', 'UNAUTHENTICATED']);
 export class ApiClient {
   readonly baseUrl: string;
   private readonly store: SessionStore;
+  private readonly cookieSession: boolean;
   private accessToken?: string;
   private session: SessionTokens | null = null;
   private currentMe: MeResponse | null = null;
@@ -92,6 +101,7 @@ export class ApiClient {
     this.baseUrl = (options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.store = options.sessionStore ?? memorySessionStore();
     this.accessToken = options.accessToken;
+    this.cookieSession = options.cookieSession ?? false;
   }
 
   /** Cambia el token fijo (ver `ApiClientOptions.accessToken`). */
@@ -136,8 +146,8 @@ export class ApiClient {
 
   /** Inicia sesión y carga `/me`: los permisos están disponibles antes de avisar a los oyentes. */
   async login(email: string, password: string): Promise<MeResponse> {
-    const { accessToken, refreshToken } = await this.send<AuthSession>('POST', '/auth/login', { email, password }, false);
-    this.session = { accessToken, refreshToken };
+    const { accessToken, refreshToken } = await this.send<AuthSession | CookieAuthSession>('POST', '/auth/login', { email, password }, false) as Partial<AuthSession> & CookieAuthSession;
+    this.session = { accessToken, refreshToken: refreshToken ?? COOKIE_SESSION };
     await this.store.save(this.session).catch(() => undefined);
     return this.loadMe();
   }
@@ -325,10 +335,14 @@ export class ApiClient {
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const token = this.session?.accessToken ?? this.accessToken;
     if (auth && token) headers.Authorization = `Bearer ${token}`;
+    if (this.cookieSession) headers['X-Session-Transport'] = 'cookie';
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+        ...(this.cookieSession ? { credentials: 'include' as const } : {}),
+      });
     } catch {
       throw new ApiError(0, 'No se pudo conectar con el servidor', 'NETWORK_ERROR');
     }
@@ -348,8 +362,10 @@ export class ApiClient {
     const refreshToken = this.session?.refreshToken;
     if (!refreshToken) return null;
     try {
-      const { accessToken, refreshToken: next } = await this.send<AuthSession>('POST', '/auth/refresh', { refreshToken }, false);
-      this.session = { accessToken, refreshToken: next };
+      const { accessToken, refreshToken: next } = await this.send<AuthSession | CookieAuthSession>(
+        'POST', '/auth/refresh', this.cookieSession ? {} : { refreshToken }, false,
+      ) as Partial<AuthSession> & CookieAuthSession;
+      this.session = { accessToken, refreshToken: next ?? COOKIE_SESSION };
       await this.store.save(this.session).catch(() => undefined);
       return this.session;
     } catch (error) {

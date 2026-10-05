@@ -29,7 +29,7 @@ export function identityRoutes(
   emailSender: EmailSender = createEmailSender(config),
 ): { auth: Router; me: Router; users: Router } {
   // El servicio se construye por petición para tomar la conexión activa (y poder testear con otra base).
-  const controller = new IdentityController(() => createIdentityService(getDatabase(), config, emailSender));
+  const controller = new IdentityController(() => createIdentityService(getDatabase(), config, emailSender), config);
   const usersController = new UsersController(() => createUsersService(getDatabase(), config, emailSender));
 
   // Freno a fuerza bruta por IP (10 intentos cada 15 minutos), además del bloqueo por cuenta del servicio.

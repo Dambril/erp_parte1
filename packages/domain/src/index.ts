@@ -191,6 +191,9 @@ export interface AuthSession {
   user: PublicUser;
 }
 
+/** Sesión de la web: el refresh token viaja en una cookie httpOnly y no aparece en el cuerpo. */
+export type CookieAuthSession = Omit<AuthSession, 'refreshToken'>;
+
 /** Empresa (tenant) a la que pertenece el usuario. */
 export interface Company {
   id: string;

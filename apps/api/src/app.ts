@@ -36,7 +36,8 @@ export function createApp(
   app.disable('x-powered-by');
 
   app.use(helmet());
-  app.use(cors({ origin: corsOrigin(config) }));
+  // `credentials`: la web guarda el refresh token en una cookie httpOnly y el navegador solo la envía si CORS lo permite.
+  app.use(cors({ origin: corsOrigin(config), credentials: true }));
   app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }));
   app.use(express.json({ limit: '100kb' }));
   app.use(requestLogger);
