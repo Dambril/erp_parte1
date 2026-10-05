@@ -13,7 +13,7 @@
  */
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { z, ZodError } from 'zod';
+import { ZodError } from 'zod';
 import { loadConfig } from '@erp/config';
 import { CreateUserRequestSchema, type Role } from '@erp/domain';
 import { closeDB, connectDB, getDatabase } from '../config/database';
@@ -22,21 +22,9 @@ import { identityRepositories } from '../modules/identity/identity.repository';
 import { createIdentityService } from '../modules/identity/identity.routes';
 import { NoopEmailSender } from '../platform/integrations/email';
 import { SEED_CONSTRUCTION_SUMMARY, seedConstruction } from './seed-construction';
+import { SeedEnvSchema } from './seed-env';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env.local') });
-
-const required = (name: string) => z.string({ required_error: `falta ${name}` }).trim().min(1, `falta ${name}`);
-
-const SeedEnvSchema = z.object({
-  SEED_TENANT_ID: required('SEED_TENANT_ID'),
-  SEED_COMPANY_NAME: required('SEED_COMPANY_NAME'),
-  SEED_ADMIN_EMAIL: required('SEED_ADMIN_EMAIL'),
-  SEED_ADMIN_NAME: required('SEED_ADMIN_NAME'),
-  SEED_ADMIN_PASSWORD: required('SEED_ADMIN_PASSWORD'),
-  SEED_USER_EMAIL: required('SEED_USER_EMAIL'),
-  SEED_USER_NAME: required('SEED_USER_NAME'),
-  SEED_USER_PASSWORD: required('SEED_USER_PASSWORD'),
-});
 
 async function run(): Promise<void> {
   const config = loadConfig();
