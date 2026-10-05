@@ -4,14 +4,16 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "moduleSuffixes": [".web", ""],
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
       "@erp/api-client": ["../../packages/api-client/src"],
-      "@erp/domain": ["../../packages/domain/src"]
+      "@erp/domain": ["../../packages/domain/src"],
+      "@erp/ui": ["../../packages/ui/src"]
     }
   },
-  "include": ["src/**/*", "vite.config.ts"]
+  "include": ["src/**/*", "vite.config.ts", "../mobile/App.tsx", "../mobile/src/**/*"]
 }

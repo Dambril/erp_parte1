@@ -1,0 +1,51 @@
+/*
+ * Fuentes del sistema visual, las mismas que empaqueta la app Android (packages/ui/assets/fonts).
+ * Cada peso se declara como una familia propia, con el nombre de `fontFaces` en packages/ui.
+ */
+@font-face {
+  font-family: 'SpaceGrotesk-Bold';
+  src: url('../../../packages/ui/assets/fonts/SpaceGrotesk-Bold.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'SpaceGrotesk-SemiBold';
+  src: url('../../../packages/ui/assets/fonts/SpaceGrotesk-SemiBold.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter-SemiBold';
+  src: url('../../../packages/ui/assets/fonts/Inter-SemiBold.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter-Regular';
+  src: url('../../../packages/ui/assets/fonts/Inter-Regular.ttf') format('truetype');
+  font-weight: 100 500;
+  font-display: swap;
+}
+/* Un texto de cuerpo marcado en negritas usa el archivo seminegro en vez de un negro simulado. */
+@font-face {
+  font-family: 'Inter-Regular';
+  src: url('../../../packages/ui/assets/fonts/Inter-SemiBold.ttf') format('truetype');
+  font-weight: 600 900;
+  font-display: swap;
+}
+
+/* React Native Web necesita que la raíz ocupe toda la ventana. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: #f7f7f2;
+  font-family: 'Inter-Regular', system-ui, sans-serif;
+}
+#root {
+  display: flex;
+  flex-direction: column;
+}

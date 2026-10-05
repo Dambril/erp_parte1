@@ -1,13 +1,8 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { App } from './App';
-import { AuthProvider } from './state';
-import './styles.css';
+import 'react-native-gesture-handler'; // debe ser el primer import, igual que en apps/mobile/index.js
+import { AppRegistry } from 'react-native';
+import App from '../../mobile/App';
+import './global.css';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
-  </StrictMode>,
-);
+// La web no tiene pantallas propias: monta la app de apps/mobile con React Native Web.
+AppRegistry.registerComponent('TSsera', () => App);
+AppRegistry.runApplication('TSsera', { rootTag: document.getElementById('root') });

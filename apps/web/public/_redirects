@@ -1,0 +1,2 @@
+# Cloudflare Pages: cualquier ruta (p. ej. /restablecer?token=...) sirve la app, que resuelve la ruta en el navegador.
+/*  /index.html  200
