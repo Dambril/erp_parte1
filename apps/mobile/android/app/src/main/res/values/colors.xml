@@ -1,0 +1,5 @@
+<resources>
+    <!-- Colores de docs/marca/identidad.md -->
+    <color name="brand_lime">#B6FF5C</color>
+    <color name="brand_bone">#F7F7F2</color>
+</resources>

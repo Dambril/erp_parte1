@@ -1,4 +1,4 @@
-// Sistema visual de T-Ssera. Sin dependencias: lo usan la app y cualquier otro cliente.
+// Sistema visual de T-ssera. Sin dependencias: lo usan la app y cualquier otro cliente.
 
 export const colors = {
   /** Acción primaria y progreso, con texto negro encima. */

@@ -8,8 +8,10 @@ export const fontFamily = {
 };
 
 export const typography = {
-  h1: {fontFamily: fontFaces.headingBold, fontSize: 28, fontWeight: '700' as const},
-  h2: {fontFamily: fontFaces.headingBold, fontSize: 20, fontWeight: '700' as const},
+  // Sin `fontWeight`: el peso ya está en el archivo. Con 700, Android buscaría `SpaceGrotesk-Bold_bold.ttf`
+  // y, al no encontrarlo, caería en la fuente del sistema.
+  h1: {fontFamily: fontFaces.headingBold, fontSize: 28},
+  h2: {fontFamily: fontFaces.headingBold, fontSize: 20},
   h3: {fontFamily: fontFaces.headingSemiBold, fontSize: 16, fontWeight: '600' as const},
   body: {fontFamily: fontFaces.body, fontSize: 14, fontWeight: '400' as const},
   bodySmall: {fontFamily: fontFaces.body, fontSize: 12, fontWeight: '400' as const},

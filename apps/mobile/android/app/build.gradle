@@ -41,11 +41,15 @@ react {
     //
     //   A list of extra flags to pass to the 'bundle' commands.
     //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
-    // extraPackagerArgs = []
+    //   La URL de la API se incrusta al transpilar (babel.config.js); sin esto Metro reutilizaría de su
+    //   caché el bundle hecho con una URL anterior.
+    extraPackagerArgs = ["--reset-cache"]
 
     /* Hermes Commands */
     //   The hermes compiler command to run. By default it is 'hermesc'
     // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
+    //   En este monorepo react-native está en el node_modules de la raíz, no junto a la app.
+    hermesCommand = "$rootDir/../../../node_modules/react-native/sdks/hermesc/%OS-BIN%/hermesc"
     //
     //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
     // hermesFlags = ["-O", "-output-source-map"]
@@ -69,6 +73,23 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'org.webkit:android-jsc:+'
 
+/**
+ * URL de la API que usará la app. Se define al compilar, nunca en el código: variable de entorno
+ * TSSERA_API_URL (la misma que lee babel.config.js) o `-PTSSERA_API_URL=...`.
+ */
+def tsseraApiUrl = (System.getenv('TSSERA_API_URL') ?: project.findProperty('TSSERA_API_URL') ?: '').toString().trim()
+def tsseraApiUri = tsseraApiUrl ? new URI(tsseraApiUrl) : null
+if (tsseraApiUrl && !(tsseraApiUri.scheme in ['http', 'https'] && tsseraApiUri.host)) {
+    throw new GradleException("TSSERA_API_URL debe ser una URL http(s) completa, por ejemplo http://192.168.1.50:3000. Valor recibido: ${tsseraApiUrl}")
+}
+
+// Un APK release sin URL de API no serviría de nada: se detiene antes de compilar.
+gradle.taskGraph.whenReady { graph ->
+    if (!tsseraApiUrl && graph.allTasks.any { it.project == project && it.name ==~ /(assemble|bundle|install)Release/ }) {
+        throw new GradleException('Falta TSSERA_API_URL. Ejemplo (PowerShell): $env:TSSERA_API_URL = "http://192.168.1.50:3000"; ./gradlew assembleRelease')
+    }
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -81,7 +102,13 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
+    }
+    // Space Grotesk e Inter viven en packages/ui/assets/fonts (las mismas que usa la web): se empaquetan como assets/fonts.
+    sourceSets {
+        main {
+            assets.srcDirs += ['../../../../packages/ui/assets']
+        }
     }
     signingConfigs {
         debug {
@@ -127,3 +154,34 @@ dependencies {
 }
 
 apply from: file("../../../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
+
+/**
+ * Configuración de seguridad de red, generada por variante en build/ (no se guarda en el repo).
+ * - debug: permite HTTP sin cifrar (Metro y la API local).
+ * - release: lo bloquea. Si TSSERA_API_URL es http://, se permite solo hacia ese host (la demo en la red local);
+ *   con https:// (API desplegada o un túnel) no se abre ninguna excepción.
+ */
+android.applicationVariants.all { variant ->
+    def outputDir = layout.buildDirectory.dir("generated/tssera/${variant.name}/res").get().asFile
+    def cleartextHost = (tsseraApiUri?.scheme == 'http') ? tsseraApiUri.host : null
+    def debuggable = variant.buildType.debuggable
+    def generate = tasks.register("generate${variant.name.capitalize()}NetworkSecurityConfig") {
+        inputs.property('cleartextHost', cleartextHost ?: '')
+        inputs.property('debuggable', debuggable)
+        outputs.dir(outputDir)
+        doLast {
+            def xml = new File(outputDir, 'xml/network_security_config.xml')
+            xml.parentFile.mkdirs()
+            def domain = (!debuggable && cleartextHost) ? """
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">${cleartextHost}</domain>
+    </domain-config>""" : ''
+            xml.text = """<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="${debuggable}" />${domain}
+</network-security-config>
+"""
+        }
+    }
+    variant.registerGeneratedResFolders(files(outputDir).builtBy(generate))
+}

@@ -4,6 +4,8 @@
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Pantalla de inicio sin código nativo: es el fondo de la ventana hasta que React pinta encima. -->
+        <item name="android:windowBackground">@drawable/splash</item>
     </style>
 
 </resources>

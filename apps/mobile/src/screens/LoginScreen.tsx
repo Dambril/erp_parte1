@@ -11,7 +11,7 @@ import {PasswordField} from '../components/PasswordField';
 import {TextField} from '../components/TextField';
 import {TextLink} from '../components/TextLink';
 import type {RootStackParamList} from '../navigation/RootNavigator';
-import logo from '../assets/logo2.png';
+import logo from '../assets/logo-negro.png';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
