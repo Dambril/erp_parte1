@@ -10,7 +10,17 @@ import { createApp } from './app';
 // El .env.local vive en la raíz del monorepo; __dirname es apps/api/src (dev) o apps/api/dist (build).
 dotenv.config({ path: path.resolve(__dirname, '../../../.env.local') });
 
-const config = loadConfig();
+function loadConfigOrExit() {
+  try {
+    return loadConfig();
+  } catch (error) {
+    // Falta o es inválida una variable de entorno: se dice cuál, sin volcar la traza ni los valores.
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+}
+
+const config = loadConfigOrExit();
 
 async function main() {
   logger.info('Starting ERP API...', { env: config.nodeEnv, port: config.port });
