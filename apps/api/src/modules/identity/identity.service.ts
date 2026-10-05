@@ -12,7 +12,7 @@ import { sendEmailSafely, type EmailSender } from '../../platform/integrations/e
 import type { RequestUser } from '../../core/middlewares/auth';
 import { getDummyHash, hashPassword, verifyPassword } from './password';
 import { generateOpaqueToken, hashToken, signAccessToken } from './tokens';
-import { passwordResetEmail, welcomeEmail } from './identity.emails';
+import { passwordResetEmail, welcomeEmail } from '../../platform/integrations/email/templates';
 import { toPublicUser, type AuthTokenType, type IdentityRepositories, type UserDocument } from './identity.repository';
 
 const MINUTE = 60_000;
@@ -90,7 +90,9 @@ export class IdentityService {
     const user = await this.deps.users.findByEmailAcrossTenants(email);
     if (!user || user.status !== 'active') return;
     const token = await this.issueOneTimeToken(user, 'password_reset', PASSWORD_RESET_MINUTES * MINUTE);
-    void sendEmailSafely(this.emailSender, passwordResetEmail(user.email, user.name, token, this.config.appWebUrl, PASSWORD_RESET_MINUTES));
+    void sendEmailSafely(this.emailSender, passwordResetEmail({
+      to: user.email, name: user.name, token, appWebUrl: this.config.appWebUrl, validMinutes: PASSWORD_RESET_MINUTES,
+    }));
   }
 
   /** Cambia la contraseña con un token de un solo uso y cierra todas las sesiones. No inicia sesión. */
@@ -142,7 +144,7 @@ export class IdentityService {
         lockedUntil: null,
         custom: {},
       }, tenantId);
-      void sendEmailSafely(this.emailSender, welcomeEmail(user.email, user.name));
+      void sendEmailSafely(this.emailSender, welcomeEmail({ to: user.email, name: user.name, appWebUrl: this.config.appWebUrl }));
       return toPublicUser(user);
     } catch (error) {
       if (error instanceof MongoServerError && error.code === 11000) {

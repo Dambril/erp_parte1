@@ -303,8 +303,8 @@ describe('password recovery', () => {
     expect(comparable(unknown)).toEqual(comparable(known));
 
     const [email] = sent;
-    expect(email).toMatchObject({ to: 'recover@example.com', subject: 'Restablece tu contraseña' });
-    expect(email!.html).toContain('Restablecer contraseña');
+    expect(email).toMatchObject({ to: 'recover@example.com', subject: 'Restablece tu contraseña de T-ssera' });
+    expect(email!.html).toContain('Crear contraseña nueva');
     expect(email!.html).toContain('Si no lo pediste, ignora este correo.');
     expect(email!.html).toContain(`${config.appWebUrl}/restablecer?token=`);
   });
@@ -470,7 +470,7 @@ describe('users and tenant isolation', () => {
   it('sends a welcome email when a user is created, without the password', async () => {
     await seedUser('welcome@example.com', 'user', 'tenant-a');
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ to: 'welcome@example.com', subject: 'Tu cuenta fue creada' });
+    expect(sent[0]).toMatchObject({ to: 'welcome@example.com', subject: 'Tu cuenta de T-ssera está lista' });
     expect(sent[0]!.text + sent[0]!.html).not.toContain(PASSWORD);
   });
 });

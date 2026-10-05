@@ -35,7 +35,7 @@ services:
       - key: RESEND_API_KEY
         sync: false # se pide en el panel; nunca en el repo
       - key: EMAIL_FROM
-        value: ERP <onboarding@resend.dev>
+        value: T-ssera Construcciones <onboarding@resend.dev>
       - key: APP_WEB_URL
         sync: false # URL pública de la web; los correos enlazan a /restablecer y /activar
       - key: DEFAULT_TENANT_ID

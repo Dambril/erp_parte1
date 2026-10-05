@@ -11,7 +11,7 @@ import type { AuditTrailRepository } from '../../core/audit';
 import { HttpError } from '../../core/http-error';
 import type { RequestUser } from '../../core/middlewares/auth';
 import { sendEmailSafely, type EmailSender } from '../../platform/integrations/email';
-import { invitationEmail } from './identity.emails';
+import { invitationEmail } from '../../platform/integrations/email/templates';
 import { toPublicUser, type IdentityRepositories, type UserDocument } from './identity.repository';
 import { INVITATION_DAYS } from './identity.service';
 import { hashPassword, verifyPassword } from './password';
@@ -68,7 +68,7 @@ export class UsersService {
       }
       throw error;
     }
-    return { user: toPublicUser(user), emailSent: await this.sendInvitation(user, token) };
+    return { user: toPublicUser(user), emailSent: await this.sendInvitation(user, token, actor) };
   }
 
   /** Enlace nuevo para una invitación pendiente; el anterior deja de servir. */
@@ -81,7 +81,7 @@ export class UsersService {
       await this.storeInvitation(user, token, session);
       await this.record(user, actor, 'user.invitation_resent', `Reenvió la invitación a ${user.name}`, session);
     });
-    return { user: toPublicUser(user), emailSent: await this.sendInvitation(user, token) };
+    return { user: toPublicUser(user), emailSent: await this.sendInvitation(user, token, actor) };
   }
 
   async changeRole(id: string, role: AssignableRole, actor: RequestUser): Promise<PublicUser> {
@@ -181,11 +181,23 @@ export class UsersService {
   }
 
   /** Aquí sí se espera el envío: quien invita necesita saber si el correo salió para poder reenviarlo. */
-  private async sendInvitation(user: UserDocument, token: string): Promise<boolean> {
-    const tenant = await this.deps.tenants.findById(user.tenantId);
+  private async sendInvitation(user: UserDocument, token: string, actor: RequestUser): Promise<boolean> {
+    const [tenant, inviter] = await Promise.all([
+      this.deps.tenants.findById(user.tenantId),
+      this.deps.users.findById(actor.id, actor.tenantId),
+    ]);
     return sendEmailSafely(
       this.emailSender,
-      invitationEmail(user.email, user.name, tenant?.name ?? 'tu empresa', token, this.config.appWebUrl, INVITATION_DAYS),
+      invitationEmail({
+        to: user.email,
+        name: user.name,
+        companyName: tenant?.name ?? 'tu empresa',
+        inviterName: inviter?.name ?? 'Un administrador',
+        roleLabel: ROLE_LABEL[user.role],
+        token,
+        appWebUrl: this.config.appWebUrl,
+        validDays: INVITATION_DAYS,
+      }),
     );
   }
 

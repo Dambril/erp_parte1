@@ -26,3 +26,11 @@ Thumbs.db
 #ia
 agentes.md
 CLAUDE.md
+
+# Vista previa de los correos (pnpm --filter @erp/api email:preview)
+.email-preview/
+
+# Llaves de firma de Android: nunca en el repo
+*.keystore
+*.jks
+!apps/mobile/android/app/debug.keystore

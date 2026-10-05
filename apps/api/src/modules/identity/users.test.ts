@@ -142,7 +142,7 @@ describe('invitaciones', () => {
     expect(await storedUser(id)).toMatchObject({ passwordHash: null, status: 'invited' });
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ to: 'nueva@example.com', subject: 'Te invitaron a Constructora A' });
+    expect(sent[0]).toMatchObject({ to: 'nueva@example.com', subject: expect.stringContaining('te invitó a Constructora A') });
     const token = tokenFromEmail(sent[0]!);
     expect(sent[0]!.text).toContain(`http://web.test/activar?token=${token}`);
     expect(sent[0]!.html).toContain(`http://web.test/activar?token=${token}`);

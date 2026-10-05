@@ -11,7 +11,8 @@ export const serverConfigSchema = z.object({
   redisUrl: z.string().url('REDIS_URL must be a valid URL').optional(),
   // Correo transaccional (Resend). Sin API key los correos no se envían, solo se registra en el log.
   resendApiKey: z.string().min(1).optional(),
-  // Remitente; por defecto el de pruebas de Resend, que solo entrega al correo dueño de la cuenta.
+  // Remitente con nombre visible, p. ej. `T-ssera Construcciones <onboarding@resend.dev>`. Ese remitente de pruebas
+  // de Resend solo entrega al correo dueño de la cuenta.
   emailFrom: z.string().min(1).optional(),
   // URL pública de la web: los correos enlazan a `${APP_WEB_URL}/restablecer?token=...` y `/activar?token=...`.
   appWebUrl: z.string({ required_error: 'APP_WEB_URL is required in production' })
