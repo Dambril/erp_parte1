@@ -1,5 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "noEmit": true, "baseUrl": ".", "jsx": "react-native", "paths": { "@erp/api-client": ["../../packages/api-client/src"], "@erp/domain": ["../../packages/domain/src"], "@erp/ui": ["../../packages/ui/src"] } },
-  "include": ["src/**/*", "App.tsx"]
+  "include": ["src/**/*", "App.tsx"],
+  "exclude": ["src/**/*.web.ts", "src/**/*.web.tsx"]
 }

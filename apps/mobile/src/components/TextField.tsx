@@ -55,6 +55,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    fontFamily: typography.body.fontFamily,
     fontSize: 14,
     color: colors.negro,
   },

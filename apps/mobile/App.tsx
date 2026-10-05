@@ -8,6 +8,7 @@ import {AuthProvider} from './src/state/AuthContext';
 import {ConnectivityProvider} from './src/state/ConnectivityContext';
 import {ConstructionProvider} from './src/state/ConstructionContext';
 import {RootNavigator} from './src/navigation/RootNavigator';
+import {linking} from './src/navigation/linking';
 
 export default function App(): React.JSX.Element {
   return (
@@ -17,7 +18,9 @@ export default function App(): React.JSX.Element {
         <ConnectivityProvider>
           <AuthProvider>
             <ConstructionProvider>
-              <NavigationContainer>
+              <NavigationContainer
+                linking={linking}
+                documentTitle={{formatter: (options, route) => `${options?.title ?? route?.name ?? 'Inicio'} · T-ssera`}}>
                 <RootNavigator />
               </NavigationContainer>
             </ConstructionProvider>

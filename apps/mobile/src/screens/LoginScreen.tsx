@@ -11,6 +11,7 @@ import {PasswordField} from '../components/PasswordField';
 import {TextField} from '../components/TextField';
 import {TextLink} from '../components/TextLink';
 import type {RootStackParamList} from '../navigation/RootNavigator';
+import logo from '../assets/logo2.png';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -44,10 +45,10 @@ export function LoginScreen(): React.ReactElement {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.logoWrap}>
           <Image
-            source={require('../assets/logo2.png')}
+            source={logo}
             style={styles.logo}
             resizeMode="contain"
-            accessibilityLabel="T-Ssera Construcciones"
+            accessibilityLabel="T-ssera Construcciones"
           />
         </View>
 

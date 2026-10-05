@@ -32,6 +32,10 @@ const styles = StyleSheet.create({
   root: {flex: 1, justifyContent: 'flex-end'},
   backdrop: {...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(22, 21, 15, 0.45)'},
   sheet: {
+    // En pantallas anchas (web) la hoja no ocupa todo el ancho.
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
     maxHeight: '88%',
     backgroundColor: colors.white,
     borderTopLeftRadius: radii.card + 6,

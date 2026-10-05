@@ -33,6 +33,17 @@ export const fonts = {
   body: 'Inter',
 } as const;
 
+/**
+ * Familia por peso, con el nombre de su archivo en `packages/ui/assets/fonts`. Android elige la fuente por nombre
+ * de archivo y la web declara estas mismas familias con @font-face, así un estilo sirve en las dos plataformas.
+ */
+export const fontFaces = {
+  headingBold: 'SpaceGrotesk-Bold',
+  headingSemiBold: 'SpaceGrotesk-SemiBold',
+  body: 'Inter-Regular',
+  bodySemiBold: 'Inter-SemiBold',
+} as const;
+
 export const radii = {
   card: 14,
   button: 12,

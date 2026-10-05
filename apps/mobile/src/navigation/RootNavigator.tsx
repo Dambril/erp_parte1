@@ -8,6 +8,7 @@ import {PrimaryButton} from '../components/PrimaryButton';
 import {CheckEmailScreen} from '../screens/CheckEmailScreen';
 import {ForgotPasswordScreen} from '../screens/ForgotPasswordScreen';
 import {LoginScreen} from '../screens/LoginScreen';
+import {NewPasswordScreen} from '../screens/NewPasswordScreen';
 import {ProjectDetailScreen} from '../screens/ProjectDetailScreen';
 import {ProjectEditScreen} from '../screens/ProjectEditScreen';
 import {ProposalDetailScreen} from '../screens/ProposalDetailScreen';
@@ -23,6 +24,9 @@ export type RootStackParamList = {
   Login: undefined;
   ForgotPassword: {email?: string} | undefined;
   CheckEmail: {email: string};
+  /** Enlaces de los correos (`/restablecer?token=...` y `/activar?token=...` en la web). */
+  ResetPassword: {token?: string} | undefined;
+  AcceptInvitation: {token?: string} | undefined;
   Main: undefined;
   ProjectDetail: {projectId: string};
   ProjectEdit: {projectId: string};
@@ -61,10 +65,15 @@ export function RootNavigator(): React.ReactElement {
   }
 
   return (
-    <Stack.Navigator screenOptions={{headerStyle: {backgroundColor: colors.blanco}, headerTintColor: colors.negro}}>
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {backgroundColor: colors.blanco},
+        headerTintColor: colors.negro,
+        headerTitleStyle: {fontFamily: typography.h3.fontFamily},
+      }}>
       {status === 'signedIn' ? (
         <>
-          <Stack.Screen name="Main" component={MainTabs} options={{headerShown: false}} />
+          <Stack.Screen name="Main" component={MainTabs} options={{headerShown: false, title: 'Inicio'}} />
           <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{title: 'Detalle de obra'}} />
           <Stack.Screen name="ProjectEdit" component={ProjectEditScreen} options={{title: 'Editar obra'}} />
           <Stack.Screen name="ProposalDetail" component={ProposalDetailScreen} options={{title: 'Detalle de propuesta'}} />
@@ -76,11 +85,14 @@ export function RootNavigator(): React.ReactElement {
         </>
       ) : (
         <>
-          <Stack.Screen name="Login" component={LoginScreen} options={{headerShown: false}} />
-          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{title: ''}} />
-          <Stack.Screen name="CheckEmail" component={CheckEmailScreen} options={{title: ''}} />
+          <Stack.Screen name="Login" component={LoginScreen} options={{headerShown: false, title: 'Iniciar sesión'}} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{headerTitle: '', title: 'Recuperar acceso'}} />
+          <Stack.Screen name="CheckEmail" component={CheckEmailScreen} options={{headerTitle: '', title: 'Revisa tu correo'}} />
         </>
       )}
+      {/* Con o sin sesión: quien abre el enlace de un correo puede tener una sesión abierta en este navegador. */}
+      <Stack.Screen name="ResetPassword" component={NewPasswordScreen} options={{headerShown: false, title: 'Crear contraseña nueva'}} />
+      <Stack.Screen name="AcceptInvitation" component={NewPasswordScreen} options={{headerShown: false, title: 'Activar cuenta'}} />
     </Stack.Navigator>
   );
 }
