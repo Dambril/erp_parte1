@@ -82,11 +82,11 @@ pnpm --filter @erp/web build
 npx wrangler pages deploy apps/web/dist --project-name tssera-erp
 ```
 
-`apps/web/public/_headers` añade cabeceras de seguridad básicas. La sesión de la web vive en `sessionStorage`: se cierra al cerrar la pestaña.
+`apps/web/public/_headers` añade cabeceras de seguridad básicas. La sesión de la web vive en una cookie `httpOnly` que pone la API. Con la web y la API en dominios distintos es una cookie de terceros y algunos navegadores no la conservan (ver ADR 0006).
 
 ## 4. App Android
 
-La URL de la API está en `apps/mobile/src/lib/apiClient.ts`: los builds release ya usan la de Render. Para producción:
+La URL de la API se define al compilar con la variable de entorno `TSSERA_API_URL` (ver [RUNBOOK](RUNBOOK.md#9-apk-para-android)). Para producción:
 
 1. Genera tu propio keystore. Sin él, los builds release se firman con `debug.keystore`, que sirve para probar pero no para publicar:
 
@@ -105,7 +105,7 @@ La URL de la API está en `apps/mobile/src/lib/apiClient.ts`: los builds release
    ```
 
    `build.gradle` usa ese keystore automáticamente cuando esas propiedades existen.
-3. El identificador de la app es `com.tssera.construcciones` y el nombre visible `T-Ssera`. El identificador no se puede cambiar después de la primera subida a Play Store.
+3. El identificador de la app es `com.tssera.construcciones` y el nombre visible `T-ssera`. El identificador no se puede cambiar después de la primera subida a Play Store.
 4. Genera el paquete desde `apps/mobile/android`:
 
    ```powershell
@@ -115,7 +115,7 @@ La URL de la API está en `apps/mobile/src/lib/apiClient.ts`: los builds release
 
    Los archivos quedan en `apps/mobile/android/app/build/outputs`.
 5. Antes de cada publicación, sube `versionCode` en `build.gradle`.
-6. Sustituye el icono del launcher por el del ERP (Android Studio, Image Asset).
+6. El ícono del launcher ya es el de la marca (`apps/mobile/scripts/generate-brand-assets.ps1`).
 7. Play Store exige una URL pública con la política de privacidad de la app.
 
 ## Lista de comprobación

@@ -1,6 +1,8 @@
-# T-Ssera Construcciones · ERP de obras
+# T-ssera Construcciones · ERP de obras
 
-ERP multi-empresa para constructoras con enfoque ecológico: propuestas, avance físico, presupuesto ejercido, certificaciones ambientales (LEED, EDGE) e impacto (CO₂, energía, agua) de todas las obras en un panel. Incluye API (Express + MongoDB Atlas), app Android (React Native) y web (React + Vite; por ahora solo el acceso).
+ERP multi-empresa para constructoras con enfoque ecológico: propuestas, avance físico, presupuesto ejercido, certificaciones ambientales (LEED, EDGE) e impacto (CO₂, energía, agua) de todas las obras en un panel. Incluye API (Express + MongoDB Atlas), app Android (React Native) y web (la misma app con React Native Web).
+
+Para levantar y verificar todo paso a paso, ver [docs/RUNBOOK.md](docs/RUNBOOK.md). Para exponer el proyecto, [docs/GUIA_DE_ESTUDIO.md](docs/GUIA_DE_ESTUDIO.md).
 
 ## Estructura del repositorio
 
@@ -10,7 +12,7 @@ Monorepo con workspaces de pnpm.
 | --- | --- |
 | `apps/api` | API REST + canal WebSocket (Node.js + Express). Módulos `identity`, `catalogs`, `inventory` y `construction` en `src/modules`. |
 | `apps/mobile` | App Android (React Native 0.73). Proyecto nativo en `apps/mobile/android`. |
-| `apps/web` | Panel web (React + Vite), publicado en Cloudflare Pages. |
+| `apps/web` | Web: monta la app de `apps/mobile` con React Native Web y Vite. Publicada en Cloudflare Pages. |
 | `packages/domain` | Esquemas (Zod), tipos y reglas de negocio compartidas: estados, transiciones, permisos por rol, dinero. |
 | `packages/api-client` | Cliente HTTP con sesión y renovación de tokens y canal en tiempo real, compartido por app y web. |
 | `packages/ui` | Tokens del sistema visual (colores, tipografías, radios) y componentes de React Native compartidos. |
@@ -49,7 +51,7 @@ Variables (validadas al arrancar en `packages/config`):
 | `PORT` | No | Por defecto `3000`. |
 | `REDIS_URL` | No | Solo hará falta cuando existan jobs con BullMQ. |
 | `RESEND_API_KEY` | No | API key de Resend. Sin ella los correos no se envían (solo log). |
-| `EMAIL_FROM` | No | Remitente. Por defecto `ERP <onboarding@resend.dev>`, que solo entrega al correo dueño de la cuenta de Resend. |
+| `EMAIL_FROM` | No | Remitente. Por defecto `T-ssera Construcciones <onboarding@resend.dev>`, que solo entrega al correo dueño de la cuenta de Resend. |
 | `APP_WEB_URL` | En producción | URL pública de la web; los correos enlazan a `/restablecer?token=...` y `/activar?token=...`. Fuera de producción, `http://localhost:5173`. |
 | `SEED_*` | Solo para `seed` | Empresa y cuentas iniciales (ver más abajo). |
 | `CORS_ORIGINS` | No | Orígenes web permitidos, separados por comas. Si falta: cualquiera en desarrollo, ninguno en producción. Las apps nativas no lo necesitan. |
@@ -77,7 +79,7 @@ Todas las rutas salvo `/health` y las públicas de `/auth/*` exigen `Authorizati
 
 | Ruta | Descripción |
 | --- | --- |
-| `POST /auth/login` | `{ email, password }` → `accessToken` (15 min), `refreshToken` (30 días) y el usuario. 401 `INVALID_CREDENTIALS` igual para correo inexistente, contraseña incorrecta o cuenta no activa. Tras 5 fallos seguidos, 429 `TOO_MANY_ATTEMPTS` durante 5 minutos. Además, máximo 10 intentos por IP cada 15 minutos. |
+| `POST /auth/login` | `{ email, password }` → `accessToken` (15 min), `refreshToken` (30 días) y el usuario. Con la cabecera `X-Session-Transport: cookie` (la web), el refresh token va en una cookie `httpOnly` y no en el cuerpo ([ADR 0006](docs/adr/0006-web-con-react-native-web-y-sesion-por-cookie.md)). 401 `INVALID_CREDENTIALS` igual para correo inexistente, contraseña incorrecta o cuenta no activa. Tras 5 fallos seguidos, 429 `TOO_MANY_ATTEMPTS` durante 5 minutos. Además, máximo 10 intentos por IP cada 15 minutos. |
 | `POST /auth/refresh` | `{ refreshToken }` → par de tokens nuevo. El anterior queda revocado; reutilizarlo cierra todas las sesiones. |
 | `POST /auth/logout` | Autenticada. Revoca la sesión del access token. 204. |
 | `POST /auth/password/forgot` | `{ email }` → 202 siempre con el mismo cuerpo; si la cuenta está activa envía el enlace (vence en 60 min). |
@@ -251,11 +253,11 @@ El emulador necesita virtualización activada en la BIOS (VT-x o SVM) y Windows 
 
 ### Dirección de la API desde la app
 
-La URL está en `apps/mobile/src/lib/apiClient.ts`. En builds de desarrollo usa la API local (el emulador no ve `localhost` del PC: en Android es `10.0.2.2:3000`); en builds release usa la API de Render.
+La URL sale de la variable de entorno `TSSERA_API_URL` al compilar (`apps/mobile/babel.config.js` y `src/lib/config.ts`). Sin ella, en desarrollo usa la API local (el emulador no ve `localhost` del PC: en Android es `10.0.2.2:3000`). Un APK release no compila sin la variable; ver [docs/RUNBOOK.md](docs/RUNBOOK.md#9-apk-para-android).
 
 ### Logo y recursos
 
-Los logos están en `apps/mobile/src/assets`; el login usa `logo2.png`. El icono del launcher se genera en Android Studio: clic derecho en `res`, New, Image Asset.
+La identidad de marca está en `docs/marca`. El login usa `apps/mobile/src/assets/logo-negro.png`. Los íconos del launcher, la pantalla de inicio y el favicon se generan con `apps/mobile/scripts/generate-brand-assets.ps1`.
 
 ## Ejecutar la web
 
@@ -265,7 +267,9 @@ Con la API corriendo (`pnpm dev`):
 pnpm --filter @erp/web dev
 ```
 
-Abre `http://localhost:5173`. La web cubre el acceso (iniciar sesión, recuperar contraseña y activar la cuenta); las pantallas de construcción están por ahora solo en la app móvil. Para apuntar a otra API, define `VITE_API_URL` (por ejemplo en `apps/web/.env.local`). Sin ella, usa `http://localhost:3000` en desarrollo y la API de Render en el build de producción.
+Abre `http://localhost:5173`. La web tiene las mismas pantallas que la app: monta `apps/mobile/App.tsx` con React Native Web. La sesión se guarda en una cookie `httpOnly`. Para apuntar a otra API, define `VITE_API_URL` (ver `apps/web/.env.example`). Sin ella, en desarrollo usa el puerto 3000 del mismo equipo que sirve la web, y la API de Render en el build de producción.
+
+Sin Atlas ni Resend, `pnpm --filter @erp/api dev:memory` levanta la API con una base en memoria.
 
 Para ver la sincronización, abre la app en dos dispositivos con usuarios del mismo tenant: aprobar una propuesta o registrar un ajuste en uno se refleja en el otro sin recargar.
 
@@ -315,4 +319,4 @@ También puedes usar `pnpm.cmd` o la terminal Command Prompt.
 
 ## Decisiones de arquitectura
 
-Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md); las de acceso, en [docs/adr/0003-acceso-y-consultas-sin-tenant.md](docs/adr/0003-acceso-y-consultas-sin-tenant.md); las del módulo de construcción, en [docs/adr/0004-modulo-construccion.md](docs/adr/0004-modulo-construccion.md); y las de propuestas, usuarios y papelera, en [docs/adr/0005-propuestas-usuarios-y-papelera.md](docs/adr/0005-propuestas-usuarios-y-papelera.md).
+Las decisiones base del stack están en [docs/adr/0001-stack-y-decisiones.md](docs/adr/0001-stack-y-decisiones.md). Las de catálogos e inventario (concurrencia, stock negativo, folios, reversas, lotes y series) están en [docs/adr/0002-catalogos-e-inventario.md](docs/adr/0002-catalogos-e-inventario.md); las de acceso, en [docs/adr/0003-acceso-y-consultas-sin-tenant.md](docs/adr/0003-acceso-y-consultas-sin-tenant.md); las del módulo de construcción, en [docs/adr/0004-modulo-construccion.md](docs/adr/0004-modulo-construccion.md); las de propuestas, usuarios y papelera, en [docs/adr/0005-propuestas-usuarios-y-papelera.md](docs/adr/0005-propuestas-usuarios-y-papelera.md); y las de la web con React Native Web, la sesión por cookie y el APK, en [docs/adr/0006-web-con-react-native-web-y-sesion-por-cookie.md](docs/adr/0006-web-con-react-native-web-y-sesion-por-cookie.md).
