@@ -11,6 +11,7 @@ import {PasswordField} from '../components/PasswordField';
 import {TextField} from '../components/TextField';
 import {TextLink} from '../components/TextLink';
 import type {RootStackParamList} from '../navigation/RootNavigator';
+import {useSecretTaps} from '../easterEgg/trigger';
 import logo from '../assets/logo-negro.png';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Login'>;
@@ -24,6 +25,7 @@ export function LoginScreen(): React.ReactElement {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   // Credenciales incorrectas, bloqueo por intentos o sin conexión: el mensaje viene de mensajeError.
   const [formError, setFormError] = useState<string | null>(null);
+  const secretTaps = useSecretTaps();
 
   const handleSubmit = async () => {
     const nextEmailError = ForgotPasswordRequestSchema.safeParse({email}).success ? null : 'Ingresa un correo válido.';
@@ -43,7 +45,7 @@ export function LoginScreen(): React.ReactElement {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.logoWrap}>
+        <View style={styles.logoWrap} {...secretTaps}>
           <Image
             source={logo}
             style={styles.logo}

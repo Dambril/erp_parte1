@@ -14,6 +14,7 @@ import {PrimaryButton} from '../components/PrimaryButton';
 import {TextField} from '../components/TextField';
 import {TextLink} from '../components/TextLink';
 import type {RootStackParamList} from '../navigation/RootNavigator';
+import {useSecretTaps} from '../easterEgg/trigger';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,6 +25,7 @@ export function PerfilScreen(): React.ReactElement {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const secretTaps = useSecretTaps();
 
   if (!user) return <View style={styles.screen} />;
 
@@ -60,7 +62,9 @@ export function PerfilScreen(): React.ReactElement {
 
       <Card>
         <View style={styles.identity}>
-          <Avatar name={user.name} size={64} />
+          <View {...secretTaps}>
+            <Avatar name={user.name} size={64} />
+          </View>
           <View style={styles.identityText}>
             {editing ? null : (
               <Text style={[typography.h2, styles.title]} numberOfLines={2}>

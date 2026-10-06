@@ -9,6 +9,7 @@ import {ConnectivityProvider} from './src/state/ConnectivityContext';
 import {ConstructionProvider} from './src/state/ConstructionContext';
 import {RootNavigator} from './src/navigation/RootNavigator';
 import {linking} from './src/navigation/linking';
+import {SnakeGame} from './src/easterEgg/SnakeGame';
 
 export default function App(): React.JSX.Element {
   return (
@@ -26,6 +27,7 @@ export default function App(): React.JSX.Element {
             </ConstructionProvider>
           </AuthProvider>
         </ConnectivityProvider>
+        <SnakeGame />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
