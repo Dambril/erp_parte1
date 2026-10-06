@@ -185,3 +185,8 @@ android.applicationVariants.all { variant ->
     }
     variant.registerGeneratedResFolders(files(outputDir).builtBy(generate))
 }
+
+// La URL forma parte del bundle de JavaScript: si cambia, Gradle debe volver a generarlo aunque el código sea el mismo.
+tasks.matching { it.name ==~ /createBundle.*JsAndAssets/ }.configureEach {
+    inputs.property('tsseraApiUrl', tsseraApiUrl)
+}
