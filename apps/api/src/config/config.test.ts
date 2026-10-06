@@ -36,7 +36,7 @@ describe('loadConfig', () => {
   it('acepta el remitente con nombre visible y separa CORS_ORIGINS por comas', () => {
     const config = loadConfig({
       ...valid, EMAIL_FROM: 'T-ssera Construcciones <onboarding@resend.dev>', APP_WEB_URL: 'https://web.example.test/',
-      CORS_ORIGINS: 'http://localhost:5173, https://web.example.test',
+      CORS_ORIGINS: 'http://localhost:5173, https://web.example.test/',
     });
     expect(config.emailFrom).toBe('T-ssera Construcciones <onboarding@resend.dev>');
     expect(config.appWebUrl).toBe('https://web.example.test');

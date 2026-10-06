@@ -64,7 +64,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     appWebUrl: env.APP_WEB_URL || (env.NODE_ENV === 'production' ? undefined : 'http://localhost:5173'),
     defaultTenantId: env.DEFAULT_TENANT_ID,
     corsOrigins: env.CORS_ORIGINS
-      ? env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+      // Un origen nunca lleva barra final ni ruta: se quita la barra para que `https://web.example/` también coincida.
+      ? env.CORS_ORIGINS.split(',').map((origin) => origin.trim().replace(/\/+$/, '')).filter(Boolean)
       : undefined,
   });
   if (result.success) return result.data;
